@@ -33,13 +33,20 @@ test "duplicate and invalid IDs are findings" {
 
 ///|
 test "invalid structure is located" {
-  let result = try? parse("{\"nbformat\":4}")
-  assert_true(result is Err(_))
+  try parse("{\"nbformat\":4}") catch {
+    Invalid(_) => ()
+  } noraise {
+    _ => fail("expected invalid structure")
+  }
 }
 
 ///|
 test "size limits reject rather than truncate" {
-  assert_true((try? parse(fixture("abc"), max_bytes=10)) is Err(_))
+  try parse(fixture("abc"), max_bytes=10) catch {
+    Invalid(_) => ()
+  } noraise {
+    _ => fail("expected size rejection")
+  }
 }
 
 ///|

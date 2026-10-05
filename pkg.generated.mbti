@@ -2,6 +2,8 @@
 package "Noverberrain/nbinspect"
 
 // Values
+pub fn match_cells(Notebook, Notebook, threshold? : Double, margin? : Double, max_candidates? : Int) -> MatchResult raise InputError
+
 pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
 
 // Errors
@@ -18,11 +20,26 @@ pub(all) struct Cell {
   raw : Json
 }
 
+pub(all) struct CellMatch {
+  before : Int
+  after : Int
+  basis : String
+  score : Double
+  moved : Bool
+}
+
 pub(all) struct Finding {
   code : String
   severity : String
   path : String
   message : String
+}
+
+pub(all) struct MatchResult {
+  pairs : Array[CellMatch]
+  deleted : Array[Int]
+  added : Array[Int]
+  ambiguous : Array[Int]
 }
 
 pub(all) struct Notebook {
