@@ -33,7 +33,7 @@ fn read(path : String) -> String raise @nb.InputError {
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: check FILE | diff BEFORE AFTER [--format json|text] [--output FILE] [--view all|code|content] [--fail-on error|warning|info] [--exit-code]",
+      "NBInspect: check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--fail-on error|warning|info] [--exit-code]",
     )
     return 0
   }
@@ -72,8 +72,8 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
       i += 1
     }
   }
-  if !["json", "text"].contains(format) {
-    raise @nb.Invalid("format must be json or text")
+  if !["json", "text", "html"].contains(format) {
+    raise @nb.Invalid("format must be json, text or html")
   }
   if !["all", "code", "content"].contains(view) {
     raise @nb.Invalid("unknown view")
@@ -101,6 +101,8 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   }
   let content = if format == "json" {
     report.stringify(indent=2)
+  } else if format == "html" {
+    @nb.html_report(report)
   } else {
     @nb.text_report(report)
   }
