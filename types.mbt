@@ -25,6 +25,6 @@ pub(all) struct Notebook {
 }
 
 ///|
-pub suberror InputError {
+pub(all) suberror InputError {
   Invalid(String)
 }

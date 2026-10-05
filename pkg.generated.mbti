@@ -6,7 +6,11 @@ pub fn blocks(Array[Finding], fail_on? : String) -> Bool raise InputError
 
 pub fn check(Notebook, max_cell_output? : Int, max_total_output? : Int, enabled? : Array[String]) -> Array[Finding] raise InputError
 
+pub fn check_report(Notebook, fail_on? : String) -> Json raise InputError
+
 pub fn diff(Notebook, Notebook, max_text_work? : Int) -> NotebookDiff raise InputError
+
+pub fn diff_report(Notebook, Notebook, view? : String) -> Json raise InputError
 
 pub fn line_diff(String, String, max_work? : Int) -> Array[LineChange] raise InputError
 
@@ -14,10 +18,12 @@ pub fn match_cells(Notebook, Notebook, threshold? : Double, margin? : Double, ma
 
 pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
 
+pub fn text_report(Json) -> String
+
 pub fn visible_changes(NotebookDiff, view? : String) -> Array[CellChange] raise InputError
 
 // Errors
-pub suberror InputError {
+pub(all) suberror InputError {
   Invalid(String)
 }
 
