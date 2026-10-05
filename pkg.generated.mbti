@@ -2,6 +2,10 @@
 package "Noverberrain/nbinspect"
 
 // Values
+pub fn blocks(Array[Finding], fail_on? : String) -> Bool raise InputError
+
+pub fn check(Notebook, max_cell_output? : Int, max_total_output? : Int, enabled? : Array[String]) -> Array[Finding] raise InputError
+
 pub fn diff(Notebook, Notebook, max_text_work? : Int) -> NotebookDiff raise InputError
 
 pub fn line_diff(String, String, max_work? : Int) -> Array[LineChange] raise InputError
