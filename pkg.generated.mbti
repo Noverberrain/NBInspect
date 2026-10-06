@@ -2,9 +2,15 @@
 package "Noverberrain/nbinspect"
 
 // Values
+pub fn diff(Notebook, Notebook, max_text_work? : Int) -> NotebookDiff raise InputError
+
+pub fn line_diff(String, String, max_work? : Int) -> Array[LineChange] raise InputError
+
 pub fn match_cells(Notebook, Notebook, threshold? : Double, margin? : Double, max_candidates? : Int) -> MatchResult raise InputError
 
 pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
+
+pub fn visible_changes(NotebookDiff, view? : String) -> Array[CellChange] raise InputError
 
 // Errors
 pub suberror InputError {
@@ -18,6 +24,15 @@ pub(all) struct Cell {
   kind : String
   source : String
   raw : Json
+}
+
+pub(all) struct CellChange {
+  before : Int
+  after : Int
+  category : String
+  old_value : Json
+  new_value : Json
+  lines : Array[LineChange]
 }
 
 pub(all) struct CellMatch {
@@ -35,6 +50,11 @@ pub(all) struct Finding {
   message : String
 }
 
+pub(all) struct LineChange {
+  operation : String
+  text : String
+}
+
 pub(all) struct MatchResult {
   pairs : Array[CellMatch]
   deleted : Array[Int]
@@ -48,6 +68,14 @@ pub(all) struct Notebook {
   raw : Json
   findings : Array[Finding]
   compatible : Bool
+}
+
+pub(all) struct NotebookDiff {
+  matches : MatchResult
+  changes : Array[CellChange]
+  notebook_changed : Bool
+  old_metadata : Json
+  new_metadata : Json
 }
 
 // Type aliases
