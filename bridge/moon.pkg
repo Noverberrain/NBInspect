@@ -1,0 +1,17 @@
+pkgtype(kind: "foreign_library")
+
+supported_targets = "js"
+
+import {
+  "Noverberrain/nbinspect" @nb,
+  "moonbitlang/core/json",
+}
+
+options(
+  link: {
+    "js": {
+      "format": "esm",
+      "exports": [ "nbinspect_analyze", "nbinspect_render_report" ],
+    },
+  },
+)

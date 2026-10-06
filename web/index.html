@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NBInspect · Notebook 审阅台</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="site-head">
+      <div class="brand"><span class="brand-mark">NB<span>.</span></span><span class="brand-name">INSPECT<br><small>NOTEBOOK REVIEW</small></span></div>
+      <span class="local-badge"><span aria-hidden="true" class="dot"></span> 仅在本地分析</span>
+    </header>
+
+    <section class="intro" aria-labelledby="intro-title">
+      <div class="intro-copy">
+        <p class="eyebrow">A CLEARER WAY TO REVIEW NOTEBOOKS <span>／ 01</span></p>
+        <h1 id="intro-title">看清每一次<br><em>Notebook</em> 变化。</h1>
+        <p class="lede">区分单元格移动与内容修改，检查发布前的风险。导入文件后，MoonBit 在浏览器中完成分析。</p>
+      </div>
+      <div class="intro-note" aria-hidden="true"><span>01</span><div>IMPORT<br>INSPECT<br>UNDERSTAND</div><i></i></div>
+    </section>
+
+    <section class="desk" aria-labelledby="desk-title">
+      <div class="section-heading"><span>工作台 / 01</span><h2 id="desk-title">选择 Notebook</h2><p>支持 nbformat 4.0–4.5；单个文件上限 10 MiB。</p></div>
+      <div class="file-grid">
+        <label class="file-card" for="before">
+          <span class="card-top"><span class="step">01</span><span>必选</span></span>
+          <span class="card-title">原始文件</span>
+          <span class="card-hint">发布检查与差异比较都从这里开始</span>
+          <input id="before" type="file" accept=".ipynb,application/json">
+        </label>
+        <label class="file-card" for="after">
+          <span class="card-top"><span class="step">02</span><span>比较时选择</span></span>
+          <span class="card-title">修改后文件</span>
+          <span class="card-hint">用于识别新增、删除、修改与移动</span>
+          <input id="after" type="file" accept=".ipynb,application/json">
+        </label>
+      </div>
+      <div class="toolbar">
+        <div class="filter"><label for="view">显示范围</label><select id="view"><option value="all">全部差异</option><option value="code">仅代码</option><option value="content">代码与文字</option></select></div>
+        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用示例</button></div>
+      </div>
+    </section>
+
+    <section class="result" aria-labelledby="result-title">
+      <div class="section-heading"><span>分析结果 / 02</span><h2 id="result-title">审阅报告</h2></div>
+      <div class="result-bar"><p id="status" role="status" aria-live="polite">选择文件，或点“试用示例”查看报告。</p><div class="downloads"><a id="json" class="outline" aria-disabled="true">下载 JSON</a><a id="html" class="outline" aria-disabled="true">下载 HTML</a></div></div>
+      <div id="empty" class="empty" aria-hidden="true"><span class="empty-glyph">≋</span><p>你的分析结果会出现在这里</p><small>文件不会上传 · 不执行 Notebook 代码</small></div>
+      <iframe id="report" title="NBInspect 分析报告" sandbox="" hidden></iframe>
+    </section>
+    <footer><span>NBINSPECT / BUILT WITH MOONBIT</span><span>LOCAL FILES. CLEAR RESULTS.</span></footer>
+  </main>
+</body>
+</html>
