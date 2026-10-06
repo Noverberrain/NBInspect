@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Noverberrain/nbinspect"
+
+// Values
+pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
+
+// Errors
+pub suberror InputError {
+  Invalid(String)
+}
+
+// Types and methods
+pub(all) struct Cell {
+  index : Int
+  id : String?
+  kind : String
+  source : String
+  raw : Json
+}
+
+pub(all) struct Finding {
+  code : String
+  severity : String
+  path : String
+  message : String
+}
+
+pub(all) struct Notebook {
+  minor : Int
+  cells : Array[Cell]
+  raw : Json
+  findings : Array[Finding]
+  compatible : Bool
+}
+
+// Type aliases
+
+// Traits
