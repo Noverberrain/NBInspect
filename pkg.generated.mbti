@@ -20,6 +20,8 @@ pub fn match_cells(Notebook, Notebook, threshold? : Double, margin? : Double, ma
 
 pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
 
+pub fn review_risks(Notebook, Notebook, max_candidates? : Int) -> RiskReview raise InputError
+
 pub fn text_report(Json) -> String
 
 pub fn visible_changes(NotebookDiff, view? : String) -> Array[CellChange] raise InputError
@@ -88,6 +90,18 @@ pub(all) struct NotebookDiff {
   notebook_changed : Bool
   old_metadata : Json
   new_metadata : Json
+}
+
+pub(all) struct RiskChange {
+  status : String
+  before : Finding?
+  after : Finding?
+  match_basis : String?
+}
+
+pub(all) struct RiskReview {
+  changes : Array[RiskChange]
+  matches : MatchResult
 }
 
 // Type aliases
