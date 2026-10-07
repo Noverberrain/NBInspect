@@ -33,13 +33,13 @@ fn read(path : String) -> String raise @nb.InputError {
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--fail-on error|warning|info] [--exit-code]",
+      "NBInspect: check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
   let command = args[0]
-  if command != "check" && command != "diff" {
-    raise @nb.Invalid("expected check or diff")
+  if command != "check" && command != "diff" && command != "review" {
+    raise @nb.Invalid("expected check, diff or review")
   }
   let positional : Array[String] = []
   let mut format = "text"
@@ -84,20 +84,25 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if positional.length() != (if command == "check" { 1 } else { 2 }) {
     raise @nb.Invalid("wrong number of input files")
   }
-  if command == "check" && (exit_diff || view != "all") {
-    raise @nb.Invalid("diff options are not valid for check")
+  if (command == "check" || command == "review") && (exit_diff || view != "all") {
+    raise @nb.Invalid("diff options are not valid for check or review")
   }
   if command == "diff" && fail_on != "error" {
-    raise @nb.Invalid("fail-on is a check option")
+    raise @nb.Invalid("fail-on is a check or review option")
   }
   if output is Some(path) && positional.contains(path) {
     raise @nb.Invalid("report cannot overwrite an input file")
   }
-  let a = @nb.parse(read(positional[0]))
+  let before = @nb.parse(read(positional[0]))
   let report : Json = if command == "check" {
-    @nb.check_report(a, fail_on~)
+    @nb.check_report(before, fail_on~)
   } else {
-    @nb.diff_report(a, @nb.parse(read(positional[1])), view~)
+    let after = @nb.parse(read(positional[1]))
+    if command == "diff" {
+      @nb.diff_report(before, after, view~)
+    } else {
+      @nb.review_report(before, after, fail_on~)
+    }
   }
   let content = if format == "json" {
     report.stringify(indent=2)
@@ -118,9 +123,19 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     None => println(content)
   }
   if command == "check" {
-    if !a.compatible {
+    if !before.compatible {
       2
-    } else if @nb.blocks(@nb.check(a), fail_on~) {
+    } else if @nb.blocks(@nb.check(before), fail_on~) {
+      1
+    } else {
+      0
+    }
+  } else if command == "review" {
+    let blocked = match report {
+      Object(o) => o.get("status") == Some(Json::string("blocked"))
+      _ => false
+    }
+    if blocked {
       1
     } else {
       0

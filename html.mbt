@@ -116,11 +116,27 @@ pub fn html_report(report : Json) -> String {
       "</p>",
     )
   }
+  if field(report, "kind") == Json::string("review") {
+    let summary = field(report, "summary")
+    b.write_string(
+      "<p>Introduced: " +
+      escape_html(field(summary, "introduced").stringify()) +
+      " · Existing: " +
+      escape_html(field(summary, "existing").stringify()) +
+      " · Resolved: " +
+      escape_html(field(summary, "resolved").stringify()) +
+      " · Uncertain: " +
+      escape_html(field(summary, "uncertain").stringify()) +
+      "</p>",
+    )
+  }
   b.write_string(
     "</header><nav><a href='#content'>Changes</a><a href='#evidence'>Evidence</a></nav><div id='content'>",
   )
   if field(report, "kind") == Json::string("check") {
     html_section(b, "Publication checks", field(report, "findings"))
+  } else if field(report, "kind") == Json::string("review") {
+    html_section(b, "Risk changes", field(report, "changes"))
   } else {
     html_section(b, "Cell changes", field(report, "changes"))
     html_section(b, "Added cells", field(report, "added"))
@@ -130,7 +146,8 @@ pub fn html_report(report : Json) -> String {
     }
   }
   b.write_string("</div><div id='evidence'>")
-  if field(report, "kind") == Json::string("diff") {
+  if field(report, "kind") == Json::string("diff") ||
+    field(report, "kind") == Json::string("review") {
     html_section(b, "Matching evidence", field(report, "matches"))
     html_section(
       b,

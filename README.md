@@ -79,3 +79,14 @@ CLI 集成脚本使用 Windows 的 `.exe` 路径；浏览器核心测试需要 N
 - 命令行输入必须是 UTF-8，单文件上限为 50 MiB；浏览器单文件上限为 10 MiB。解析器最多接受 10,000 个单元格，文本差异计算也有工作量限制。
 - 发布检查给出需要人工复核的线索；执行计数不能证明代码曾正确运行，附件引用检查也不是完整的 Markdown 解析器。
 - 当前差异分析只验证 nbformat 4.0–4.5；格式错误或未验证的更高次版本可能导致比较失败。
+
+## 发布前风险审阅
+
+用 review 对照修改前后的 Notebook，报告本次新增、持续、已消除和待确认的风险：
+
+```powershell
+& $bin review .\before.ipynb .\after.ipynb
+& $bin review .\before.ipynb .\after.ipynb --format json --fail-on warning
+```
+
+默认在新增 error 级别风险时返回退出码 1；使用 --fail-on warning 或 --fail-on info 可以提高阻断级别。已有风险会列入报告，但不会作为本次新增风险阻断命令。匹配依据和无法确认的单元格也会保留在 JSON 与 HTML 报告中。

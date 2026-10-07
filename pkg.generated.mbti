@@ -20,6 +20,8 @@ pub fn match_cells(Notebook, Notebook, threshold? : Double, margin? : Double, ma
 
 pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
 
+pub fn review_report(Notebook, Notebook, fail_on? : String) -> Json raise InputError
+
 pub fn review_risks(Notebook, Notebook, max_candidates? : Int) -> RiskReview raise InputError
 
 pub fn text_report(Json) -> String

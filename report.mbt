@@ -112,3 +112,72 @@ pub fn diff_report(
     },
   }
 }
+
+///|
+fn risk_change_json(change : RiskChange) -> Json {
+  {
+    "status": change.status,
+    "before": match change.before {
+      Some(finding) => finding_json(finding)
+      None => Json::null()
+    },
+    "after": match change.after {
+      Some(finding) => finding_json(finding)
+      None => Json::null()
+    },
+    "match_basis": match change.match_basis {
+      Some(basis) => Json::string(basis)
+      None => Json::null()
+    },
+  }
+}
+
+///|
+fn match_json(pair : CellMatch) -> Json {
+  {
+    "before": pair.before,
+    "after": pair.after,
+    "basis": pair.basis,
+    "score": pair.score,
+    "moved": pair.moved,
+  }
+}
+
+///|
+/// Build a JSON report for risks introduced between two Notebook versions.
+pub fn review_report(
+  before : Notebook,
+  after : Notebook,
+  fail_on? : String = "error",
+) -> Json raise InputError {
+  ignore(blocks([], fail_on~))
+  let review = review_risks(before, after)
+  let changes = review.changes
+  let introduced = changes.filter(fn(change) { change.status == "introduced" })
+  let blocking = introduced.map(fn(change) { change.after.unwrap() })
+  {
+    "schema_version": 1,
+    "kind": "review",
+    "status": if blocks(blocking, fail_on~) {
+      "blocked"
+    } else {
+      "passed"
+    },
+    "fail_on": fail_on,
+    "summary": {
+      "introduced": introduced.length(),
+      "existing": changes
+      .filter(fn(change) { change.status == "existing" })
+      .length(),
+      "resolved": changes
+      .filter(fn(change) { change.status == "resolved" })
+      .length(),
+      "uncertain": changes
+      .filter(fn(change) { change.status == "uncertain" })
+      .length(),
+    },
+    "changes": changes.map(risk_change_json),
+    "matches": review.matches.pairs.map(match_json),
+    "ambiguous_before": review.matches.ambiguous,
+  }
+}
