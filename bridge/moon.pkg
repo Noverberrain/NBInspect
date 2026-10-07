@@ -11,7 +11,12 @@ options(
   link: {
     "js": {
       "format": "esm",
-      "exports": [ "nbinspect_analyze", "nbinspect_render_report" ],
+      "exports": [
+        "nbinspect_analyze",
+        "nbinspect_render_report",
+        "nbinspect_review",
+        "nbinspect_render_review",
+      ],
     },
   },
 )

@@ -12,7 +12,7 @@ pub fn diff(Notebook, Notebook, max_text_work? : Int) -> NotebookDiff raise Inpu
 
 pub fn diff_report(Notebook, Notebook, view? : String) -> Json raise InputError
 
-pub fn html_report(Json) -> String
+pub fn html_report(Json, risk_status? : String) -> String
 
 pub fn line_diff(String, String, max_work? : Int) -> Array[LineChange] raise InputError
 

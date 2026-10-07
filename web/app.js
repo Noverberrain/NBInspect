@@ -13,6 +13,20 @@ const notebook = cells => JSON.stringify({ nbformat: 4, nbformat_minor: 5, metad
 const sampleBefore = notebook([cell('setup', 'x = 1\n'), cell('compute', 'print(x)\n'), cell('ending', 'print("done")\n'), prose('notes', '# Results\n')]);
 const sampleAfter = notebook([cell('compute', 'print(x + 1)\n'), cell('setup', 'x = 1\n'), cell('ending', 'print("done")\n'), prose('notes', '# Updated results\n')]);
 
+const failedCell = (id, source, message) => ({ ...cell(id, source), outputs: [{ output_type: 'error', ename: 'DemoError', evalue: message, traceback: [] }] });
+const riskBefore = notebook([
+  failedCell('existing', 'print("same")', 'saved error'),
+  failedCell('fixed', 'print("fixed")', 'old error'),
+  cell('new-risk', 'print("new")'),
+  failedCell(undefined, 'alpha()', 'unmatched old error'),
+]);
+const riskAfter = notebook([
+  cell('fixed', 'print("fixed")'),
+  failedCell('existing', 'print("same")', 'saved error'),
+  failedCell('new-risk', 'print("new")', 'new error'),
+  failedCell(undefined, 'omega()', 'unmatched new error'),
+]);
+
 function clearResult(message) {
   runId++;
   activeWorker?.terminate();
@@ -25,6 +39,8 @@ function clearResult(message) {
     link.removeAttribute('href');
     link.setAttribute('aria-disabled', 'true');
   }
+  element('risk-status').disabled = true;
+  element('risk-controls').hidden = true;
   element('report').hidden = true;
   element('report').removeAttribute('srcdoc');
   element('empty').hidden = false;
@@ -43,8 +59,8 @@ async function analyze(mode) {
   const ownRun = runId;
   lastMode = mode;
   try {
-    const before = sampleMode ? sampleBefore : await readNotebook('before');
-    const after = mode === 'check' ? '' : sampleMode ? sampleAfter : await readNotebook('after');
+    const before = sampleMode ? (mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
+    const after = mode === 'check' ? '' : sampleMode ? (mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
     if (ownRun !== runId) return;
     const worker = new Worker('./worker.js', { type: 'module' });
     activeWorker = worker;
@@ -54,17 +70,25 @@ async function analyze(mode) {
     };
     worker.onmessage = ({ data }) => {
       if (ownRun !== runId) return;
-      worker.terminate();
-      activeWorker = null;
       if (data.error) {
         clearResult('分析失败：' + data.error);
         return;
       }
+      if (data.filtered) {
+        if (data.riskStatus !== element('risk-status').value) return;
+        element('report').srcdoc = data.displayHtml;
+        showStatus();
+        return;
+      }
+      if (data.report.kind !== 'review') {
+        worker.terminate();
+        activeWorker = null;
+      }
       current = data;
-      element('status').textContent = data.report.kind === 'diff'
-        ? `比较完成 · 可见差异 ${data.report.visible_changes} 项 · 共 ${data.report.total_changes} 项`
-        : `检查完成 · ${data.report.status} · ${data.report.findings.length} 条诊断`;
-      element('report').srcdoc = data.html;
+      element('risk-controls').hidden = data.report.kind !== 'review';
+      element('risk-status').disabled = data.report.kind !== 'review';
+      showStatus();
+      element('report').srcdoc = data.displayHtml;
       element('report').hidden = false;
       element('empty').hidden = true;
       for (const kind of ['json', 'html']) {
@@ -78,21 +102,44 @@ async function analyze(mode) {
         link.setAttribute('aria-disabled', 'false');
       }
     };
-    worker.postMessage({ before, after, view: element('view').value });
+    worker.postMessage({ mode, before, after, view: element('view').value, riskStatus: element('risk-status').value });
   } catch (error) {
     if (ownRun === runId) clearResult('分析失败：' + error.message);
   }
 }
 
+function showStatus() {
+  const report = current.report;
+  if (report.kind === 'review') {
+    const s = report.summary;
+    const filter = element('risk-status').value;
+    const visible = filter === 'all' ? report.changes.length : s[filter];
+    element('status').textContent = '审阅完成 · 新增 ' + s.introduced + ' / 已有 ' + s.existing + ' / 已消除 ' + s.resolved + ' / 待确认 ' + s.uncertain + ' · 当前显示 ' + visible + ' 项 · ' + (report.status === 'blocked' ? '新增风险达到阻断级别' : '未新增阻断级别风险');
+  } else {
+    element('status').textContent = report.kind === 'diff'
+      ? '比较完成 · 可见差异 ' + report.visible_changes + ' 项 · 共 ' + report.total_changes + ' 项'
+      : '检查完成 · ' + report.status + ' · ' + report.findings.length + ' 条诊断';
+  }
+}
+
 element('check').addEventListener('click', () => analyze('check'));
 element('compare').addEventListener('click', () => analyze('diff'));
+element('review').addEventListener('click', () => analyze('review'));
+element('sample-review').addEventListener('click', () => { sampleMode = true; analyze('review'); });
 element('sample').addEventListener('click', () => { sampleMode = true; analyze('diff'); });
 for (const id of ['before', 'after']) {
   element(id).addEventListener('change', () => {
     sampleMode = false;
-    clearResult('文件已选择。点击“检查”或“比较”开始分析。');
+    clearResult('文件已选择。点击“检查”“比较”或“审阅发布风险”开始分析。');
   });
 }
 element('view').addEventListener('change', () => {
   if (lastMode === 'diff' && current) analyze('diff');
 });
+
+element('risk-status').addEventListener('change', () => {
+  if (current?.report.kind === 'review' && activeWorker) {
+    activeWorker.postMessage({ mode: 'render', riskStatus: element('risk-status').value });
+  }
+});
+window.addEventListener('pagehide', () => clearResult('选择文件开始分析。'));

@@ -55,7 +55,7 @@ $bin = '.\_build\native\debug\build\cmd\nbinspect\nbinspect.exe'
 python -m http.server 8765 --bind 127.0.0.1 --directory web
 ```
 
-打开 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)。选择原始 Notebook 后可以检查；再选择修改后的文件可以比较。也可以点击“试用示例”，无需准备文件。分析由本地构建的 MoonBit JS 模块在浏览器 Worker 中完成，文件不会上传。修改 MoonBit 核心代码后需重新运行构建脚本。更多操作见 [浏览器说明](web/README.md)。
+打开 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)。选择原始 Notebook 后可以检查；再选择修改后的文件可以比较差异或审阅发布风险。风险审阅支持按新增、已有、已消除、待确认筛选，下载保留完整报告。也可以点击“试用示例”，无需准备文件。分析由本地构建的 MoonBit JS 模块在浏览器 Worker 中完成，文件不会上传。修改 MoonBit 核心代码后需重新运行构建脚本。更多操作见 [浏览器说明](web/README.md)。
 
 ## 本地验证
 
@@ -69,6 +69,7 @@ moon build --target native
 ./scripts/cli_test.ps1
 ./scripts/build_web.ps1
 node ./scripts/browser_core_test.mjs
+node ./scripts/browser_ui_test.mjs
 ```
 
 CLI 集成脚本使用 Windows 的 `.exe` 路径；浏览器核心测试需要 Node.js，且应在构建浏览器模块后运行。

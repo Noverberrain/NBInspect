@@ -85,3 +85,8 @@ footer{flex-direction:column}
 }
 
 .empty[hidden]{display:none}
+
+.risk-controls{display:flex;align-items:center;gap:24px;padding:16px;border:1px solid var(--line);border-top:0;background:var(--wash)}
+.risk-controls[hidden]{display:none}
+.risk-controls p{margin:0;color:var(--muted);font-size:12px;line-height:1.8;max-width:620px}
+@media(max-width:650px){.risk-controls{align-items:start;flex-direction:column;gap:12px}}

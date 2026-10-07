@@ -35,19 +35,23 @@
         <label class="file-card" for="after">
           <span class="card-top"><span class="step">02</span><span>比较时选择</span></span>
           <span class="card-title">修改后文件</span>
-          <span class="card-hint">用于识别新增、删除、修改与移动</span>
+          <span class="card-hint">用于比较内容变化与发布风险</span>
           <input id="after" type="file" accept=".ipynb,application/json">
         </label>
       </div>
       <div class="toolbar">
-        <div class="filter"><label for="view">显示范围</label><select id="view"><option value="all">全部差异</option><option value="code">仅代码</option><option value="content">代码与文字</option></select></div>
-        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用示例</button></div>
+        <div class="filter"><label for="view">差异显示范围</label><select id="view"><option value="all">全部差异</option><option value="code">仅代码</option><option value="content">代码与文字</option></select></div>
+        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="review" type="button">审阅发布风险 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用差异示例</button><button id="sample-review" type="button" class="outline">试用风险示例</button></div>
       </div>
     </section>
 
     <section class="result" aria-labelledby="result-title">
       <div class="section-heading"><span>分析结果 / 02</span><h2 id="result-title">审阅报告</h2></div>
       <div class="result-bar"><p id="status" role="status" aria-live="polite">选择文件，或点“试用示例”查看报告。</p><div class="downloads"><a id="json" class="outline" aria-disabled="true">下载 JSON</a><a id="html" class="outline" aria-disabled="true">下载 HTML</a></div></div>
+      <div id="risk-controls" class="risk-controls" hidden>
+        <div class="filter"><label for="risk-status">风险状态</label><select id="risk-status" disabled><option value="all">全部风险</option><option value="introduced">新增风险</option><option value="existing">已有风险</option><option value="resolved">已消除风险</option><option value="uncertain">待确认风险</option></select></div>
+        <p>待确认表示单元格对应关系不足，需人工复核。默认仅新增 error 级别风险阻断；筛选只影响显示，下载始终包含完整报告。</p>
+      </div>
       <div id="empty" class="empty" aria-hidden="true"><span class="empty-glyph">≋</span><p>你的分析结果会出现在这里</p><small>文件不会上传 · 不执行 Notebook 代码</small></div>
       <iframe id="report" title="NBInspect 分析报告" sandbox="" hidden></iframe>
     </section>

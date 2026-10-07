@@ -89,8 +89,60 @@ fn html_section(b : StringBuilder, title : String, items : Json) -> Unit {
 }
 
 ///|
+fn html_risks(b : StringBuilder, items : Array[Json]) -> Unit {
+  b.write_string("<section><h2>Risk changes</h2>")
+  if items.is_empty() {
+    b.write_string("<p class='muted'>No risks in this view.</p>")
+  }
+  for item in items {
+    b.write_string(
+      "<article><h3>" +
+      escape_html(preview(field(item, "status"))) +
+      "</h3><div class='columns'>",
+    )
+    for side in ["before", "after"] {
+      let finding = field(item, side)
+      b.write_string("<div><h4>" + side + "</h4>")
+      if finding == Json::null() {
+        b.write_string("<p class='muted'>No finding.</p>")
+      } else {
+        b.write_string(
+          "<p><strong>" +
+          escape_html(preview(field(finding, "code"))) +
+          "</strong> · " +
+          escape_html(preview(field(finding, "severity"))) +
+          "</p><pre>" +
+          escape_html(preview(field(finding, "path"))) +
+          "\n" +
+          escape_html(preview(field(finding, "message"))) +
+          "</pre>",
+        )
+      }
+      b.write_string("</div>")
+    }
+    b.write_string(
+      "</div><p class='muted'>Match basis: " +
+      escape_html(preview(field(item, "match_basis"))) +
+      "</p></article>",
+    )
+  }
+  b.write_string("</section>")
+}
+
+///|
 /// Standalone report. Notebook payloads are escaped text; no remote resources.
-pub fn html_report(report : Json) -> String {
+pub fn html_report(report : Json, risk_status? : String = "all") -> String {
+  let selected = match risk_status {
+    "introduced" | "existing" | "resolved" | "uncertain" => risk_status
+    _ => "all"
+  }
+  let risks = match field(report, "changes") {
+    Array(items) =>
+      items.filter(fn(item) {
+        selected == "all" || field(item, "status") == Json::string(selected)
+      })
+    _ => []
+  }
   let b = StringBuilder()
   b.write_string(
     "<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'\"><title>NBInspect report</title>",
@@ -129,6 +181,13 @@ pub fn html_report(report : Json) -> String {
       escape_html(field(summary, "uncertain").stringify()) +
       "</p>",
     )
+    b.write_string(
+      "<p>Risk filter: " +
+      escape_html(selected) +
+      " · Visible risks: " +
+      risks.length().to_string() +
+      "</p><p class='muted'>Only introduced findings at the blocking threshold affect status. Existing and uncertain risks still need review.</p>",
+    )
   }
   b.write_string(
     "</header><nav><a href='#content'>Changes</a><a href='#evidence'>Evidence</a></nav><div id='content'>",
@@ -136,7 +195,7 @@ pub fn html_report(report : Json) -> String {
   if field(report, "kind") == Json::string("check") {
     html_section(b, "Publication checks", field(report, "findings"))
   } else if field(report, "kind") == Json::string("review") {
-    html_section(b, "Risk changes", field(report, "changes"))
+    html_risks(b, risks)
   } else {
     html_section(b, "Cell changes", field(report, "changes"))
     html_section(b, "Added cells", field(report, "added"))
