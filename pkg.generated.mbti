@@ -2,6 +2,12 @@
 package "Noverberrain/nbinspect"
 
 // Values
+pub fn batch_error(String, String) -> Json
+
+pub fn batch_file(String, Json) -> Json
+
+pub fn batch_report(String, Array[Json], Array[Json], Array[Json], recursive? : Bool, fail_on? : String) -> Json
+
 pub fn blocks(Array[Finding], fail_on? : String) -> Bool raise InputError
 
 pub fn check(Notebook, max_cell_output? : Int, max_total_output? : Int, enabled? : Array[String]) -> Array[Finding] raise InputError

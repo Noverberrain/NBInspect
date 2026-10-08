@@ -33,13 +33,16 @@ fn read(path : String) -> String raise @nb.InputError {
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
   let command = args[0]
-  if command != "check" && command != "diff" && command != "review" {
-    raise @nb.Invalid("expected check, diff or review")
+  if command != "check" &&
+    command != "diff" &&
+    command != "review" &&
+    command != "batch" {
+    raise @nb.Invalid("expected check, diff, review or batch")
   }
   let positional : Array[String] = []
   let mut format = "text"
@@ -47,10 +50,14 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   let mut view = "all"
   let mut fail_on = "error"
   let mut exit_diff = false
+  let mut recursive = false
   let mut i = 1
   while i < args.length() {
     let arg = args[i]
-    if arg == "--exit-code" {
+    if arg == "--recursive" {
+      recursive = true
+      i += 1
+    } else if arg == "--exit-code" {
       exit_diff = true
       i += 1
     } else if ["--format", "--output", "--view", "--fail-on"].contains(arg) {
@@ -81,27 +88,36 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if !["error", "warning", "info"].contains(fail_on) {
     raise @nb.Invalid("unknown fail-on")
   }
-  if positional.length() != (if command == "check" { 1 } else { 2 }) {
+  if positional.length() !=
+    (if command == "check" || command == "batch" { 1 } else { 2 }) {
     raise @nb.Invalid("wrong number of input files")
   }
-  if (command == "check" || command == "review") && (exit_diff || view != "all") {
-    raise @nb.Invalid("diff options are not valid for check or review")
+  if (command == "check" || command == "review" || command == "batch") &&
+    (exit_diff || view != "all") {
+    raise @nb.Invalid("diff options are only valid for diff")
   }
   if command == "diff" && fail_on != "error" {
-    raise @nb.Invalid("fail-on is a check or review option")
+    raise @nb.Invalid("fail-on is a check, review or batch option")
+  }
+  if recursive && command != "batch" {
+    raise @nb.Invalid("recursive is a batch option")
   }
   if output is Some(path) && positional.contains(path) {
     raise @nb.Invalid("report cannot overwrite an input file")
   }
-  let before = @nb.parse(read(positional[0]))
-  let report : Json = if command == "check" {
-    @nb.check_report(before, fail_on~)
+  let report : Json = if command == "batch" {
+    scan_batch(positional[0], recursive, fail_on)
   } else {
-    let after = @nb.parse(read(positional[1]))
-    if command == "diff" {
-      @nb.diff_report(before, after, view~)
+    let before = @nb.parse(read(positional[0]))
+    if command == "check" {
+      @nb.check_report(before, fail_on~)
     } else {
-      @nb.review_report(before, after, fail_on~)
+      let after = @nb.parse(read(positional[1]))
+      if command == "diff" {
+        @nb.diff_report(before, after, view~)
+      } else {
+        @nb.review_report(before, after, fail_on~)
+      }
     }
   }
   let content = if format == "json" {
@@ -122,13 +138,15 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     }
     None => println(content)
   }
-  if command == "check" {
-    if !before.compatible {
-      2
-    } else if @nb.blocks(@nb.check(before), fail_on~) {
-      1
-    } else {
-      0
+  if command == "check" || command == "batch" {
+    match report {
+      Object(o) =>
+        match o.get("status") {
+          Some(String("unsupported" | "incomplete")) => 2
+          Some(String("blocked")) => 1
+          _ => 0
+        }
+      _ => 2
     }
   } else if command == "review" {
     let blocked = match report {

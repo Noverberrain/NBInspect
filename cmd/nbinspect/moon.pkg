@@ -9,6 +9,6 @@ pkgtype(kind: "executable")
 supported_targets = "native"
 
 options(
-  "native-stub": [ "io.c" ],
-  targets: { "main.mbt": [ "native" ] },
+  "native-stub": [ "io.c", "scan.c" ],
+  targets: { "main.mbt": [ "native" ], "batch.mbt": [ "native" ] },
 )

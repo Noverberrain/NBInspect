@@ -41,10 +41,30 @@ $bin = '.\_build\native\debug\build\cmd\nbinspect\nbinspect.exe'
 | `--format text\|json\|html` | 选择报告格式；默认 `text`。 |
 | `--output FILE` | 将报告写入新文件；默认输出到终端。 |
 | `--view all\|code\|content` | `diff` 的显示范围：全部、仅代码、代码与文字；默认 `all`。 |
-| `--fail-on error\|warning\|info` | `check` 的阻断级别；默认 `error`。 |
+| `--fail-on error\|warning\|info` | `check`、`review`、`batch` 的阻断级别；默认 `error`。 |
 | `--exit-code` | `diff` 存在可见差异时返回 `1`。 |
 
 退出码：`0` 表示命令成功；`check` 触发所选阻断级别，或带 `--exit-code` 的 `diff` 发现可见差异时返回 `1`；参数、文件、格式或分析错误返回 `2`。普通 `diff` 即使有变化也返回 `0`。
+
+## 批量检查
+
+检查一个文件夹中的 Notebook；默认只检查当前层，添加 `--recursive` 扫描子目录：
+
+```powershell
+& $bin batch '.\课程资料' --recursive
+& $bin batch '.\课程资料' --recursive --format json --fail-on warning
+& $bin batch '.\课程资料' --recursive --format html --output '.\batch-report.html'
+```
+
+汇总报告列出每个文件的相对路径、检查状态与完整诊断，以及通过、阻断、读取／解析错误、未支持格式、扫描错误和跳过项的数量。HTML 提供文件导航，可直接跳到相应文件的诊断。损坏文件不会中断其他文件的检查。
+
+- 退出码 `0`：扫描完整，全部文件通过所选阻断级别；空文件夹会明确报告文件数为 `0`。
+- 退出码 `1`：扫描完整，但至少一个文件触发所选阻断级别。
+- 退出码 `2`：某文件无法读取或解析、格式未受支持、子目录扫描失败或达到扫描上限；仍输出已经完成的结果，报告状态为 `incomplete`。根目录无效或无法完整列出，以及参数／报告写入错误，会输出到 stderr。
+- `batch` 的 JSON 报告沿用 `schema_version: 1`，`kind` 为 `batch`；`files` 保存逐文件结果，`scan_errors` 与 `skipped` 分别记录扫描错误和跳过项。
+- 跳过符号链接、Windows Junction／其他重解析点及特殊文件，排除 `.git`、`_build`、`.mooncakes`、`.ipynb_checkpoints` 和 `node_modules` 目录。
+- 上限为 1,000 个 Notebook、4,096 个目录；单目录至多 10,000 项／16 MiB 文件名列表，每个 Notebook 沿用 50 MiB 输入限制。达到上限会报告检查不完整，避免静默漏检。
+- `--output` 仍只允许写入新文件。目录发现为 native CLI 功能，当前浏览器仍按一个或两个 Notebook 操作。
 
 ## 浏览器演示
 
@@ -67,6 +87,7 @@ moon test --target js
 moon fmt --check
 moon build --target native
 ./scripts/cli_test.ps1
+./scripts/batch_cli_test.ps1
 ./scripts/build_web.ps1
 node ./scripts/browser_core_test.mjs
 node ./scripts/browser_ui_test.mjs

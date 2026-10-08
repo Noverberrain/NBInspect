@@ -192,7 +192,9 @@ pub fn html_report(report : Json, risk_status? : String = "all") -> String {
   b.write_string(
     "</header><nav><a href='#content'>Changes</a><a href='#evidence'>Evidence</a></nav><div id='content'>",
   )
-  if field(report, "kind") == Json::string("check") {
+  if field(report, "kind") == Json::string("batch") {
+    batch_html(b, report)
+  } else if field(report, "kind") == Json::string("check") {
     html_section(b, "Publication checks", field(report, "findings"))
   } else if field(report, "kind") == Json::string("review") {
     html_risks(b, risks)

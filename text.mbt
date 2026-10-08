@@ -17,7 +17,9 @@ pub fn text_report(report : Json) -> String {
     report_string(field(report, "status")) +
     "\n",
   )
-  if kind == "check" {
+  if kind == "batch" {
+    b.write_string(batch_text(report))
+  } else if kind == "check" {
     match field(report, "findings") {
       Array(items) =>
         for item in items {
