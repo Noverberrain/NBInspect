@@ -75,13 +75,14 @@ pub fn review_risks(
   before : Notebook,
   after : Notebook,
   max_candidates? : Int = 1000000,
+  policy? : CheckPolicy = default_policy(),
 ) -> RiskReview raise InputError {
   if !before.compatible || !after.compatible {
     raise Invalid("unverified Notebook minor version")
   }
   let matches = match_cells(before, after, max_candidates~)
-  let old_findings = check(before)
-  let new_findings = check(after)
+  let old_findings = check(before, policy~)
+  let new_findings = check(after, policy~)
   let old_to_new = Array::make(before.cells.length(), -1)
   let new_to_old = Array::make(after.cells.length(), -1)
   let basis = Array::make(after.cells.length(), "")

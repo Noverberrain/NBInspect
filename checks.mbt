@@ -10,14 +10,32 @@ fn finding(
 
 ///|
 /// Check publication risks. Execution counters are evidence, not proof of correctness.
+/// A supplied policy takes precedence over the legacy limits and enabled options.
 pub fn check(
   n : Notebook,
   max_cell_output? : Int = 1048576,
   max_total_output? : Int = 10485760,
+  policy? : CheckPolicy,
   enabled? : Array[String] = [
     "FMT001", "FMT002", "OUT001", "EXE001", "EXE002", "ATT001", "SIZE001", "META001",
   ],
 ) -> Array[Finding] raise InputError {
+  if policy is Some(p) {
+    validate_policy(p)
+    return check(
+      n,
+      max_cell_output=p.max_cell_output,
+      max_total_output=p.max_total_output,
+      enabled=p.enabled,
+    ).map(fn(f) {
+      {
+        code: f.code,
+        severity: p.severities[f.code],
+        path: f.path,
+        message: f.message,
+      }
+    })
+  }
   if max_cell_output <= 0 || max_total_output <= 0 {
     raise Invalid("output thresholds must be positive")
   }

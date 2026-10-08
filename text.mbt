@@ -17,6 +17,11 @@ pub fn text_report(report : Json) -> String {
     report_string(field(report, "status")) +
     "\n",
   )
+  if field(report, "policy") != Json::null() {
+    b.write_string(
+      "Effective policy: " + field(report, "policy").stringify() + "\n",
+    )
+  }
   if kind == "batch" {
     b.write_string(batch_text(report))
   } else if kind == "check" {

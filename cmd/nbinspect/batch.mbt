@@ -32,7 +32,7 @@ fn directory_entries(path : String) -> Array[String] raise @nb.InputError {
 fn scan_batch(
   root : String,
   recursive : Bool,
-  fail_on : String,
+  policy : @nb.CheckPolicy,
 ) -> Json raise @nb.InputError {
   let first = directory_entries(root)
   let pending : Array[(String, Array[String])] = [("", first)]
@@ -97,12 +97,12 @@ fn scan_batch(
   for path in paths {
     let result = try {
       let notebook = @nb.parse(read(root + "/" + path))
-      let report = @nb.check_report(notebook, fail_on~)
+      let report = @nb.check_report(notebook, policy~)
       @nb.batch_file(path, report)
     } catch {
       @nb.Invalid(message) => @nb.batch_error(path, message)
     }
     files.push(result)
   }
-  @nb.batch_report(root, files, issues, skipped, recursive~, fail_on~)
+  @nb.batch_report(root, files, issues, skipped, recursive~, policy~)
 }

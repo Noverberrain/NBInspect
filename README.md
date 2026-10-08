@@ -66,6 +66,60 @@ $bin = '.\_build\native\debug\build\cmd\nbinspect\nbinspect.exe'
 - 上限为 1,000 个 Notebook、4,096 个目录；单目录至多 10,000 项／16 MiB 文件名列表，每个 Notebook 沿用 50 MiB 输入限制。达到上限会报告检查不完整，避免静默漏检。
 - `--output` 仍只允许写入新文件。目录发现为 native CLI 功能，当前浏览器仍按一个或两个 Notebook 操作。
 
+## 发布规则配置
+
+`check`、`review` 和 `batch` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
+
+```powershell
+& $bin check .\notebook.ipynb --config .\configs\sharing.json
+& $bin review .\before.ipynb .\after.ipynb --config .\configs\research.json --format html --output .\review-policy.html
+& $bin batch '.\课程资料' --recursive --config .\configs\teaching.json --format json
+```
+
+配置示例：
+
+```json
+{
+  "schema_version": 1,
+  "fail_on": "warning",
+  "rules": {
+    "OUT001": { "enabled": true, "severity": "error" },
+    "EXE002": { "enabled": false }
+  },
+  "limits": {
+    "max_cell_output_bytes": 1048576,
+    "max_total_output_bytes": 10485760
+  }
+}
+```
+
+`schema_version` 缺省为 `1`；所有规则默认启用。各规则可独立指定 `enabled`（布尔值）及 `severity`（`error`、`warning`、`info`）。`limits` 使用单个 Notebook 序列化输出的 UTF-8 字节数；默认单元格 1 MiB、Notebook 总输出 10 MiB，只接受 1–2,147,483,647 的整数。
+
+| 规则 | 检查内容 | 默认等级 |
+| --- | --- | --- |
+| FMT001 | 未验证的 nbformat 次版本 | error |
+| FMT002 | 缺失、无效或重复的单元格 ID | error |
+| OUT001 | 已保存的异常输出 | warning |
+| EXE001 | 单元格与结果的执行计数不一致 | warning |
+| EXE002 | 执行计数倒序或重复 | info |
+| ATT001 | 缺失的字面附件引用 | warning |
+| SIZE001 | 输出大小超过阈值 | warning |
+| META001 | 缺失内核或语言元数据 | info |
+
+FMT001、FMT002 保持启用及 error 等级；语法／结构错误与未支持格式仍按原有方式处理。修改策略不会执行 Notebook 或修复文件。
+
+优先级为：显式 `--fail-on` > 配置文件 `fail_on` > 默认 `error`，包括显式传入 `--fail-on error`。无效配置即使存在 CLI 覆盖也会报错，返回 `2`；错误会指出配置文件及字段路径。配置文件必须为 UTF-8 JSON，最多 1 MiB，未知字段、规则编号、错误类型和非法阈值均会拒绝。
+
+`review` 对前后 Notebook 使用同一份有效策略；只新增且达到阻断等级的风险影响状态。`batch` 在开始扫描前加载、验证一次策略，所有文件共享它。JSON 报告新增 `policy` 字段，记录所有规则的有效开关、等级、阈值和最终阻断等级；文本与 HTML 也展示有效策略。报告 schema 仍为 `1`，未使用配置时判断行为保持原样。`--output` 不覆盖配置文件。
+
+| 模板 | 示例取舍 |
+| --- | --- |
+| [teaching.json](configs/teaching.json) | 异常输出降为 info，关闭执行顺序提示，放宽输出大小 |
+| [research.json](configs/research.json) | warning 阻断，执行结果计数不一致升为 error，允许较大输出 |
+| [sharing.json](configs/sharing.json) | warning 阻断，异常输出升为 error、元数据缺失升为 warning，收紧输出大小 |
+
+这些模板是项目可修改的示例，不代表通用发布标准。当前浏览器使用默认策略；本项配置文件入口在 CLI 提供，核心 API 同时支持 native 与 JS。
+
 ## 浏览器演示
 
 需要 MoonBit、PowerShell 和 Python 3。在仓库根目录运行：
@@ -88,6 +142,7 @@ moon fmt --check
 moon build --target native
 ./scripts/cli_test.ps1
 ./scripts/batch_cli_test.ps1
+./scripts/policy_cli_test.ps1
 ./scripts/build_web.ps1
 node ./scripts/browser_core_test.mjs
 node ./scripts/browser_ui_test.mjs

@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "fail_on": "warning",
+  "rules": { "OUT001": { "severity": "error" }, "META001": { "severity": "warning" } },
+  "limits": { "max_cell_output_bytes": 524288, "max_total_output_bytes": 5242880 }
+}

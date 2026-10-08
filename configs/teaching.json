@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "fail_on": "error",
+  "rules": { "EXE002": { "enabled": false }, "OUT001": { "severity": "info" } },
+  "limits": { "max_cell_output_bytes": 2097152, "max_total_output_bytes": 20971520 }
+}

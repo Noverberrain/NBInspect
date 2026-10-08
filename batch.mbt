@@ -23,8 +23,17 @@ pub fn batch_report(
   issues : Array[Json],
   skipped : Array[Json],
   recursive? : Bool = false,
-  fail_on? : String = "error",
+  fail_on? : String,
+  policy? : CheckPolicy = default_policy(),
 ) -> Json {
+  let threshold = fail_on.unwrap_or(policy.fail_on)
+  let effective = {
+    enabled: policy.enabled,
+    severities: policy.severities,
+    max_cell_output: policy.max_cell_output,
+    max_total_output: policy.max_total_output,
+    fail_on: threshold,
+  }
   let count = fn(status) {
     files.filter(fn(f) { field(f, "status") == Json::string(status) }).length()
   }
@@ -61,7 +70,8 @@ pub fn batch_report(
     },
     "root": root,
     "recursive": recursive,
-    "fail_on": fail_on,
+    "fail_on": threshold,
+    "policy": policy_json(effective),
     "complete": complete,
     "summary": {
       "files": files.length(),

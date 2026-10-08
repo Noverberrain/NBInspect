@@ -11,10 +11,12 @@ fn finding_json(f : Finding) -> Json {
 ///|
 pub fn check_report(
   n : Notebook,
-  fail_on? : String = "error",
+  fail_on? : String,
+  policy? : CheckPolicy = default_policy(),
 ) -> Json raise InputError {
-  let findings = check(n)
-  let blocked = blocks(findings, fail_on~)
+  let policy = policy.with_fail_on(fail_on.unwrap_or(policy.fail_on))
+  let findings = check(n, policy~)
+  let blocked = blocks(findings, fail_on=policy.fail_on)
   {
     "schema_version": 1,
     "kind": "check",
@@ -25,6 +27,7 @@ pub fn check_report(
     } else {
       "passed"
     },
+    "policy": policy_json(policy),
     "nbformat_minor": n.minor,
     "cell_count": n.cells.length(),
     "findings": findings.map(finding_json),
@@ -148,22 +151,24 @@ fn match_json(pair : CellMatch) -> Json {
 pub fn review_report(
   before : Notebook,
   after : Notebook,
-  fail_on? : String = "error",
+  fail_on? : String,
+  policy? : CheckPolicy = default_policy(),
 ) -> Json raise InputError {
-  ignore(blocks([], fail_on~))
-  let review = review_risks(before, after)
+  let policy = policy.with_fail_on(fail_on.unwrap_or(policy.fail_on))
+  let review = review_risks(before, after, policy~)
   let changes = review.changes
   let introduced = changes.filter(fn(change) { change.status == "introduced" })
   let blocking = introduced.map(fn(change) { change.after.unwrap() })
   {
     "schema_version": 1,
     "kind": "review",
-    "status": if blocks(blocking, fail_on~) {
+    "status": if blocks(blocking, fail_on=policy.fail_on) {
       "blocked"
     } else {
       "passed"
     },
-    "fail_on": fail_on,
+    "fail_on": policy.fail_on,
+    "policy": policy_json(policy),
     "summary": {
       "introduced": introduced.length(),
       "existing": changes

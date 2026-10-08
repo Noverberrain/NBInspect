@@ -189,6 +189,13 @@ pub fn html_report(report : Json, risk_status? : String = "all") -> String {
       "</p><p class='muted'>Only introduced findings at the blocking threshold affect status. Existing and uncertain risks still need review.</p>",
     )
   }
+  if field(report, "policy") != Json::null() {
+    b.write_string(
+      "<details><summary>Effective publication policy</summary><pre>" +
+      escape_html(preview(field(report, "policy"))) +
+      "</pre></details>",
+    )
+  }
   b.write_string(
     "</header><nav><a href='#content'>Changes</a><a href='#evidence'>Evidence</a></nav><div id='content'>",
   )
