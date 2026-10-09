@@ -215,17 +215,21 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t nb_git(int32_t operation, moonbit_bytes_t a,
   char *first = nb_argument(a), *second = nb_argument(b);
   nb_output out = {NULL, 0, 0, limit > 0 ? (size_t)limit : 0};
   int status = 4;
-  const char *argv[24] = {"git", "--no-pager", "--no-replace-objects", "--no-lazy-fetch", "--no-optional-locks"};
+  const char *argv[28] = {"git", "--no-pager", "--no-replace-objects", "--no-lazy-fetch", "--no-optional-locks"};
   int n = 5;
   if (!first || !second || limit <= 0 || limit > 52428800) goto done;
   if (operation == 0) {
     argv[n++] = "rev-parse"; argv[n++] = "--verify"; argv[n++] = "--end-of-options"; argv[n++] = first;
-  } else if (operation == 1) {
+  } else if (operation == 1 || operation == 3) {
     argv[n++] = "diff"; argv[n++] = "--raw"; argv[n++] = "-z"; argv[n++] = "--no-abbrev";
     argv[n++] = "--no-ext-diff"; argv[n++] = "--no-textconv"; argv[n++] = "--no-color";
     argv[n++] = "--no-relative"; argv[n++] = "--ignore-submodules=none";
     argv[n++] = "--find-renames=50%"; argv[n++] = "-l1000";
-    argv[n++] = first; argv[n++] = second; argv[n++] = "--";
+    if (operation == 3) {
+      argv[n++] = "--cached"; argv[n++] = "--ita-invisible-in-index";
+      if (*first) argv[n++] = first;
+    } else { argv[n++] = first; argv[n++] = second; }
+    argv[n++] = "--";
   } else if (operation == 2) {
     /* Reject oversized blobs before transferring their contents. The streaming
      * limit remains active in case the size and content commands disagree. */
@@ -238,6 +242,11 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t nb_git(int32_t operation, moonbit_bytes_t a,
     free(metadata.data);
     if (status) goto done;
     argv[format] = "blob";
+  } else if (operation == 4) {
+    argv[n++] = "symbolic-ref"; argv[n++] = "--quiet"; argv[n++] = "HEAD";
+  } else if (operation == 5) {
+    argv[n++] = "for-each-ref"; argv[n++] = "--format=%(refname)";
+    argv[n++] = "--"; argv[n++] = first;
   } else goto done;
   argv[n] = NULL;
   status = nb_capture(argv, &out);

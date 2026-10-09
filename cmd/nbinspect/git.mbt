@@ -66,6 +66,52 @@ fn review_git(
   let changes = @nb.parse_git_changes(
     git_read(1, base_commit, head_commit, 16777216),
   )
+  let files = review_git_files(changes, policy)
+  @nb.git_review_report(base, head, base_commit, head_commit, files, policy~)
+}
+
+///|
+/// Only an absent local branch is unborn; a broken HEAD is still an error.
+fn git_index_base() -> String raise @nb.InputError {
+  git_commit("HEAD") catch {
+    @nb.Invalid(message) => {
+      let branch = git_read(4, "", "", 8192).trim().to_owned()
+      if !branch.has_prefix("refs/heads/") ||
+        git_read(5, branch, "", 16777216) != "" {
+        raise @nb.Invalid(message)
+      }
+      ""
+    }
+  }
+}
+
+///|
+fn review_staged(policy : @nb.CheckPolicy) -> Json raise @nb.InputError {
+  let base_commit = git_index_base()
+  // One manifest freezes the staged blob IDs; subsequent reads use objects only.
+  let changes = @nb.parse_git_changes(git_read(3, base_commit, "", 16777216))
+  if git_index_base() != base_commit {
+    raise @nb.Invalid(
+      "HEAD changed while reading the Git index; retry the review",
+    )
+  }
+  let files = review_git_files(changes, policy)
+  @nb.git_review_report(
+    "HEAD",
+    "INDEX",
+    base_commit,
+    "",
+    files,
+    policy~,
+    staged=true,
+  )
+}
+
+///|
+fn review_git_files(
+  changes : Array[@nb.GitChange],
+  policy : @nb.CheckPolicy,
+) -> Array[Json] {
   let files : Array[Json] = []
   for change in changes {
     if change.kind == "deleted" {
@@ -97,5 +143,5 @@ fn review_git(
     }
     files.push(@nb.git_review_file(change, report))
   }
-  @nb.git_review_report(base, head, base_commit, head_commit, files, policy~)
+  files
 }

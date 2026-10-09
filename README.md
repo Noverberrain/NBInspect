@@ -86,7 +86,27 @@ $bin = '.\_build\native\debug\build\cmd\nbinspect\nbinspect.exe'
 - 原始清单最多 16 MiB，最多 1,000 个变更 Notebook，每个 Blob 至多 50 MiB，Git 进程在 30 秒时触发超时并终止。清单超限直接报错，不输出看似完整的部分报告；单个 Blob 超限保留为逐文件错误。
 - 改名使用 Git 的 50% 相似度判断，穷举候选上限为 1,000；未识别的改名会表现为删除和新增，新增文件的历史风险无法继承。[Git 改名限制说明](https://git-scm.com/docs/git-diff#Documentation/git-diff.txt--lnum)。
 - 链接、子模块及其他非普通文件不跟随，仍在逐文件错误中列出；Git LFS 指针按保存的 Blob 解析，尚不读取 LFS 实体。无法解码的非 UTF-8 路径清单会报错。
-- 首版仅提供 native CLI 的提交读取入口；不包含未提交改动审阅、远程 PR 拉取或自动评论。清单解析、风险汇总和报告核心同时支持 native 与 JS。
+- Git 对象读取入口为 native CLI；支持两个提交或暂存区审阅，尚不包含全部工作区改动审阅、远程 PR 拉取或自动评论。清单解析、风险汇总和报告核心同时支持 native 与 JS。
+
+## 提交前暂存区审阅
+
+在目标仓库中，用 `review-git --staged` 检查实际准备提交的 Notebook：
+
+```powershell
+& $bin review-git --staged
+& $bin review-git --staged --config .\configs\sharing.json --format json
+& $bin review-git --staged --fail-on warning --format html --output .\staged-review.html
+```
+
+比较当前 HEAD 与暂存区，支持新增、修改、Git 识别的改名及删除。新文件的所有发现算新增风险，修改和改名只因新增且达到阻断等级的风险返回 `1`；已有风险仍列入报告。尚未完成首次提交时，按空树比较，所有已暂存 Notebook 视为新增。没有 Notebook 改动时报告文件数为 `0`，返回 `0`。
+
+- 只检查暂存的内容：部分暂存文件之后在工作区修改、删除或损坏，不影响已暂存版本的分析。未跟踪、未暂存以及仅 `git add -N` 标记为计划添加的文件不进入报告；完整暂存空文件则会因无效 Notebook 报错。
+- 不同时接受两个提交参数，不与 `--view`、`--exit-code`、`--recursive` 混用。支持现有 `--config`、`--fail-on`、`--format` 和 `--output`；退出码及资源限制与提交审阅相同。
+- 从一份 Git raw 清单固定文件和 Blob ID，随后直接读取这些对象；不执行 Notebook、不写入索引、不生成提交或树对象。HEAD 在读取清单期间变化会报错，请重新审阅；暂存区之后发生的修改须重新分析，报告不会自动更新。
+- 暂存区任何文件存在未解决的合并冲突，均返回 `2` 并在 stderr 说明原因，不输出成功报告。损坏 HEAD、索引或缺失对象同样报错；普通逐文件读取／格式错误保留其他结果，报告为 `incomplete`。
+- JSON 沿用 `kind: "git-review"`、`schema_version: 1`，新增 `source` 字段（`index` 或 `commits`）。暂存区模式为 `base_ref: "HEAD"`、`head_ref: "INDEX"`；`base_commit` 是解析后的 HEAD，首次提交时为 `null`；`head_commit` 为 `null`，不将暂存区伪装成提交。每个文件仍记录实际前后 Blob ID。文本与 HTML 明确标记 `Staged` 来源，首次提交标记 `first commit`。
+
+暂存区比较采用 [Git `diff --cached` 的语义](https://git-scm.com/docs/git-diff)，从子目录运行也检查整个仓库。这一功能提供 CLI 审阅入口，Git hook 安装另行开发。
 
 ## 发布规则配置
 
@@ -164,7 +184,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略及 Git 版本审查集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本及暂存区审阅集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 

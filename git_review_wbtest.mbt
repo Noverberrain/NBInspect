@@ -163,3 +163,43 @@ test "Git reports escape every path and error and expose matching evidence" {
   assert_eq(field(empty, "status"), Json::string("passed"))
   assert_true(html_report(empty).contains("No changed notebooks."))
 }
+
+///|
+test "Staged reports identify index content without inventing a commit" {
+  let change = parse_git_changes(raw_git("A", "<draft>.ipynb"))[0]
+  let report = git_review_report(
+    "HEAD",
+    "INDEX",
+    "",
+    "",
+    [git_review_file(change, check_report(book([])))],
+    staged=true,
+  )
+  assert_eq(field(report, "source"), Json::string("index"))
+  assert_eq(field(report, "base_commit"), Json::null())
+  assert_eq(field(report, "head_commit"), Json::null())
+  assert_eq(field(report, "status"), Json::string("passed"))
+  assert_true(
+    text_report(report).contains("empty tree (first commit) -> INDEX"),
+  )
+  let html = html_report(report)
+  assert_true(html.contains("Staged: empty tree (first commit) -&gt; INDEX"))
+  assert_true(html.contains("&lt;draft&gt;.ipynb"))
+  let based = git_review_report("HEAD", "INDEX", "abc", "", [], staged=true)
+  assert_eq(field(based, "base_commit"), Json::string("abc"))
+  assert_true(text_report(based).contains("Staged: abc -> INDEX"))
+  let commits = git_review_report("main", "feature", "a", "b", [])
+  assert_eq(field(commits, "source"), Json::string("commits"))
+  assert_eq(field(commits, "head_commit"), Json::string("b"))
+}
+
+///|
+test "Unmerged entries fail even outside Notebook scope" {
+  let raw = raw_git("M", "conflict.txt").replace(old=" M\u0000", new=" U\u0000")
+  try parse_git_changes(raw) catch {
+    Invalid(message) =>
+      assert_true(message.contains("unresolved merge conflicts"))
+  } noraise {
+    _ => fail("conflicted index accepted")
+  }
+}

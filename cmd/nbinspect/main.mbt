@@ -39,7 +39,7 @@ fn read(
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: review-git BASE HEAD | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
@@ -60,10 +60,14 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   let mut config : String? = None
   let mut exit_diff = false
   let mut recursive = false
+  let mut staged = false
   let mut i = 1
   while i < args.length() {
     let arg = args[i]
-    if arg == "--recursive" {
+    if arg == "--staged" {
+      staged = true
+      i += 1
+    } else if arg == "--recursive" {
       recursive = true
       i += 1
     } else if arg == "--exit-code" {
@@ -103,8 +107,17 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if !["error", "warning", "info"].contains(fail_on) {
     raise @nb.Invalid("unknown fail-on")
   }
+  if staged && command != "review-git" {
+    raise @nb.Invalid("staged is a review-git option")
+  }
   if positional.length() !=
-    (if command == "check" || command == "batch" { 1 } else { 2 }) {
+    (if staged {
+      0
+    } else if command == "check" || command == "batch" {
+      1
+    } else {
+      2
+    }) {
     raise @nb.Invalid("wrong number of input files")
   }
   if (
@@ -144,7 +157,11 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     loaded
   }
   let report : Json = if command == "review-git" {
-    review_git(positional[0], positional[1], policy)
+    if staged {
+      review_staged(policy)
+    } else {
+      review_git(positional[0], positional[1], policy)
+    }
   } else if command == "batch" {
     scan_batch(positional[0], recursive, policy)
   } else {

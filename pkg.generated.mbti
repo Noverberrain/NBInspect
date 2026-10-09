@@ -24,7 +24,7 @@ pub fn git_review_error(GitChange, String) -> Json
 
 pub fn git_review_file(GitChange, Json) -> Json
 
-pub fn git_review_report(String, String, String, String, Array[Json], policy? : CheckPolicy) -> Json raise InputError
+pub fn git_review_report(String, String, String, String, Array[Json], policy? : CheckPolicy, staged? : Bool) -> Json raise InputError
 
 pub fn html_report(Json, risk_status? : String) -> String
 

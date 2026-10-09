@@ -60,6 +60,11 @@ pub fn parse_git_changes(
       }
     }
     let status = header[4]
+    if status == "U" {
+      raise Invalid(
+        "Git index has unresolved merge conflicts; resolve and stage them before review",
+      )
+    }
     let renamed = status.has_prefix("R") || status.has_prefix("C")
     if !(["A", "D", "M", "T"].contains(status) ||
       (
@@ -167,6 +172,7 @@ pub fn git_review_report(
   head_commit : String,
   files : Array[Json],
   policy? : CheckPolicy = default_policy(),
+  staged? : Bool = false,
 ) -> Json raise InputError {
   validate_policy(policy)
   let count = fn(key, value) {
@@ -209,8 +215,21 @@ pub fn git_review_report(
     "complete": complete,
     "base_ref": base_ref,
     "head_ref": head_ref,
-    "base_commit": base_commit,
-    "head_commit": head_commit,
+    "source": if staged {
+      "index"
+    } else {
+      "commits"
+    },
+    "base_commit": if staged && base_commit == "" {
+      Json::null()
+    } else {
+      Json::string(base_commit)
+    },
+    "head_commit": if staged {
+      Json::null()
+    } else {
+      Json::string(head_commit)
+    },
     "policy": policy_json(policy),
     "summary": {
       "files": files.length(),
@@ -232,13 +251,28 @@ pub fn git_review_report(
 }
 
 ///|
-fn git_review_text(report : Json) -> String {
-  let b = StringBuilder()
-  b.write_string(
+fn git_review_origin(report : Json) -> String {
+  if field(report, "source") == Json::string("index") {
+    "Staged: " +
+    (if field(report, "base_commit") == Json::null() {
+      "empty tree (first commit)"
+    } else {
+      report_string(field(report, "base_commit"))
+    }) +
+    " -> INDEX"
+  } else {
     "Commits: " +
     report_string(field(report, "base_commit")) +
     " -> " +
-    report_string(field(report, "head_commit")) +
+    report_string(field(report, "head_commit"))
+  }
+}
+
+///|
+fn git_review_text(report : Json) -> String {
+  let b = StringBuilder()
+  b.write_string(
+    git_review_origin(report) +
     "\nSummary: " +
     field(report, "summary").stringify() +
     "\n",
@@ -273,10 +307,8 @@ fn git_review_text(report : Json) -> String {
 ///|
 fn git_review_html(b : StringBuilder, report : Json) -> Unit {
   b.write_string(
-    "<section><h2>Git review</h2><p>Commits: " +
-    escape_html(preview(field(report, "base_commit"))) +
-    " → " +
-    escape_html(preview(field(report, "head_commit"))) +
+    "<section><h2>Git review</h2><p>" +
+    escape_html(git_review_origin(report)) +
     "</p><pre>" +
     escape_html(preview(field(report, "summary"))) +
     "</pre><nav>",
