@@ -20,6 +20,12 @@ pub fn diff(Notebook, Notebook, max_text_work? : Int) -> NotebookDiff raise Inpu
 
 pub fn diff_report(Notebook, Notebook, view? : String) -> Json raise InputError
 
+pub fn git_review_error(GitChange, String) -> Json
+
+pub fn git_review_file(GitChange, Json) -> Json
+
+pub fn git_review_report(String, String, String, String, Array[Json], policy? : CheckPolicy) -> Json raise InputError
+
 pub fn html_report(Json, risk_status? : String) -> String
 
 pub fn line_diff(String, String, max_work? : Int) -> Array[LineChange] raise InputError
@@ -27,6 +33,8 @@ pub fn line_diff(String, String, max_work? : Int) -> Array[LineChange] raise Inp
 pub fn match_cells(Notebook, Notebook, threshold? : Double, margin? : Double, max_candidates? : Int) -> MatchResult raise InputError
 
 pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise InputError
+
+pub fn parse_git_changes(String, max_files? : Int) -> Array[GitChange] raise InputError
 
 pub fn parse_policy(String) -> CheckPolicy raise InputError
 
@@ -85,6 +93,16 @@ pub(all) struct Finding {
   severity : String
   path : String
   message : String
+}
+
+pub(all) struct GitChange {
+  kind : String
+  path : String
+  old_path : String
+  old_mode : String
+  new_mode : String
+  before_blob : String
+  after_blob : String
 }
 
 pub(all) struct LineChange {

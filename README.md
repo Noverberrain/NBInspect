@@ -66,9 +66,31 @@ $bin = '.\_build\native\debug\build\cmd\nbinspect\nbinspect.exe'
 - 上限为 1,000 个 Notebook、4,096 个目录；单目录至多 10,000 项／16 MiB 文件名列表，每个 Notebook 沿用 50 MiB 输入限制。达到上限会报告检查不完整，避免静默漏检。
 - `--output` 仍只允许写入新文件。目录发现为 native CLI 功能，当前浏览器仍按一个或两个 Notebook 操作。
 
+## Git 改动审阅
+
+在目标 Git 仓库（或其子目录）中运行 native CLI，指定两个提交、分支或标签：
+
+```powershell
+& $bin review-git HEAD~1 HEAD
+& $bin review-git main feature --config .\configs\sharing.json --format json
+& $bin review-git HEAD~1 HEAD --format html --output .\git-review.html
+```
+
+先将引用解析为实际提交号，再比较两个完整提交树。这里是两个端点的比较，不自动寻找 merge-base；配置文件和报告路径相对当前工作目录。运行其他仓库时，先保存 NBInspect 可执行文件的绝对路径，再进入目标仓库调用它。
+
+- 新增 Notebook 使用发布检查，报告中的所有发现计为新增风险；修改和 Git 识别的改名使用现有风险审阅，只因新增且达到阻断等级的风险阻断。
+- 删除文件保留记录，不检查旧内容，也不将其风险自动归为已消除；`.ipynb` 改成其他扩展名按离开检查范围记录，其他扩展名改成 `.ipynb` 按新增检查。扩展名匹配不区分 ASCII 大小写。
+- 使用 [Git raw -z 格式](https://git-scm.com/docs/git-diff#_raw_output_format) 读取路径；支持 UTF-8 中文、空格、引号等名称。JSON 记录原路径、目标路径、前后 Blob ID、两个输入引用及实际提交号；文本和 HTML 提供逐文件状态、风险及匹配依据。
+- 退出码 `0`：全部已检查文件通过，或没有 Notebook 变更；`1`：存在阻断文件；`2`：参数／Git／报告错误，或某文件读取、解析、格式检查失败。逐文件失败保留其他结果，汇总状态为 `incomplete`，不会因其他文件通过而返回 `0`。
+- 直接读取提交对象，忽略暂存区和工作区内容；不切换分支、不 checkout 文件、不执行 Notebook、不自动下载缺失对象。需要 PATH 上的 Git，且支持 `--no-lazy-fetch`（本地验证 Git 2.51.0）。
+- 原始清单最多 16 MiB，最多 1,000 个变更 Notebook，每个 Blob 至多 50 MiB，Git 进程在 30 秒时触发超时并终止。清单超限直接报错，不输出看似完整的部分报告；单个 Blob 超限保留为逐文件错误。
+- 改名使用 Git 的 50% 相似度判断，穷举候选上限为 1,000；未识别的改名会表现为删除和新增，新增文件的历史风险无法继承。[Git 改名限制说明](https://git-scm.com/docs/git-diff#Documentation/git-diff.txt--lnum)。
+- 链接、子模块及其他非普通文件不跟随，仍在逐文件错误中列出；Git LFS 指针按保存的 Blob 解析，尚不读取 LFS 实体。无法解码的非 UTF-8 路径清单会报错。
+- 首版仅提供 native CLI 的提交读取入口；不包含未提交改动审阅、远程 PR 拉取或自动评论。清单解析、风险汇总和报告核心同时支持 native 与 JS。
+
 ## 发布规则配置
 
-`check`、`review` 和 `batch` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
+`check`、`review`、`batch` 和 `review-git` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
 
 ```powershell
 & $bin check .\notebook.ipynb --config .\configs\sharing.json
@@ -143,6 +165,7 @@ moon build --target native
 ./scripts/cli_test.ps1
 ./scripts/batch_cli_test.ps1
 ./scripts/policy_cli_test.ps1
+pwsh -NoProfile -File ./scripts/git_cli_test.ps1
 ./scripts/build_web.ps1
 node ./scripts/browser_core_test.mjs
 node ./scripts/browser_ui_test.mjs

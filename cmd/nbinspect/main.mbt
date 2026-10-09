@@ -39,7 +39,7 @@ fn read(
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: check/review/batch support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: review-git BASE HEAD | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
@@ -47,8 +47,9 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if command != "check" &&
     command != "diff" &&
     command != "review" &&
-    command != "batch" {
-    raise @nb.Invalid("expected check, diff, review or batch")
+    command != "batch" &&
+    command != "review-git" {
+    raise @nb.Invalid("expected check, diff, review, batch or review-git")
   }
   let positional : Array[String] = []
   let mut format = "text"
@@ -106,7 +107,12 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     (if command == "check" || command == "batch" { 1 } else { 2 }) {
     raise @nb.Invalid("wrong number of input files")
   }
-  if (command == "check" || command == "review" || command == "batch") &&
+  if (
+      command == "check" ||
+      command == "review" ||
+      command == "batch" ||
+      command == "review-git"
+    ) &&
     (exit_diff || view != "all") {
     raise @nb.Invalid("diff options are only valid for diff")
   }
@@ -119,7 +125,9 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if recursive && command != "batch" {
     raise @nb.Invalid("recursive is a batch option")
   }
-  if output is Some(path) && positional.contains(path) {
+  if command != "review-git" &&
+    output is Some(path) &&
+    positional.contains(path) {
     raise @nb.Invalid("report cannot overwrite an input file")
   }
   let loaded = match config {
@@ -135,7 +143,9 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   } else {
     loaded
   }
-  let report : Json = if command == "batch" {
+  let report : Json = if command == "review-git" {
+    review_git(positional[0], positional[1], policy)
+  } else if command == "batch" {
     scan_batch(positional[0], recursive, policy)
   } else {
     let before = @nb.parse(read(positional[0]))
@@ -171,7 +181,7 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     }
     None => println(content)
   }
-  if command == "check" || command == "batch" {
+  if command == "check" || command == "batch" || command == "review-git" {
     match report {
       Object(o) =>
         match o.get("status") {
