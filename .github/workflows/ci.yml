@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows native and JS
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MOONBIT_VERSION: 0.10.14+7d59c7ec9
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Install pinned MoonBit and core
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:MOON_HOME = Join-Path $env:RUNNER_TEMP 'nbinspect-moonbit'
+          "MOON_HOME=$env:MOON_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          New-Item -ItemType Directory -Force '_build/ci-logs' | Out-Null
+          Start-Transcript -Path '_build/ci-logs/setup.log'
+          try {
+            $version = [Uri]::EscapeDataString($env:MOONBIT_VERSION)
+            $archives = @(
+              @{ Name = 'moonbit'; Url = "https://cli.moonbitlang.com/binaries/$version/moonbit-windows-x86_64.zip"; Hash = 'faae225a8287d0ce69e44b5b3f754af988e97f4446056d8f32ceb3ddb998fce7'; Destination = $env:MOON_HOME },
+              @{ Name = 'core'; Url = "https://cli.moonbitlang.com/cores/core-$version.zip"; Hash = '63e5b99991ac8fd49556b1e17bdcbdc662d797000250dd11ef090f38a2175e84'; Destination = (Join-Path $env:MOON_HOME 'lib') }
+            )
+            foreach ($archive in $archives) {
+              $zip = Join-Path $env:RUNNER_TEMP "$($archive.Name).zip"
+              Invoke-WebRequest -Uri $archive.Url -OutFile $zip -TimeoutSec 180 -MaximumRetryCount 2
+              if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $archive.Hash) {
+                throw "$($archive.Name) archive checksum mismatch"
+              }
+              Expand-Archive -LiteralPath $zip -DestinationPath $archive.Destination
+            }
+            $bin = Join-Path $env:MOON_HOME 'bin'
+            $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $env:PATH = "$bin;$env:PATH"
+            Push-Location (Join-Path $env:MOON_HOME 'lib/core')
+            try {
+              foreach ($target in @('native', 'js')) {
+                moon bundle --target $target
+                if ($LASTEXITCODE -ne 0) { throw "Core bundle failed: $target" }
+              }
+            } finally { Pop-Location }
+          } finally { Stop-Transcript }
+
+      - name: Test validation failure handling
+        run: pwsh -NoProfile -File scripts/ci_runner_test.ps1
+
+      - name: Run validation
+        run: pwsh -NoProfile -File scripts/ci.ps1
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-validation-logs
+          path: _build/ci-logs/
+          if-no-files-found: warn
+          retention-days: 14

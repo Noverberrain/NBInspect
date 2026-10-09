@@ -153,25 +153,22 @@ python -m http.server 8765 --bind 127.0.0.1 --directory web
 
 打开 [http://127.0.0.1:8765/](http://127.0.0.1:8765/)。选择原始 Notebook 后可以检查；再选择修改后的文件可以比较差异或审阅发布风险。风险审阅支持按新增、已有、已消除、待确认筛选，下载保留完整报告。也可以点击“试用示例”，无需准备文件。分析由本地构建的 MoonBit JS 模块在浏览器 Worker 中完成，文件不会上传。修改 MoonBit 核心代码后需重新运行构建脚本。更多操作见 [浏览器说明](web/README.md)。
 
-## 本地验证
+## 本地验证与 CI
+
+在 Windows 仓库根目录运行统一验证入口，需要 PowerShell 7、MoonBit、Git 和 Node.js：
 
 ```powershell
-moon check --target native
-moon test --target native
-moon check --target js
-moon test --target js
-moon fmt --check
-moon build --target native
-./scripts/cli_test.ps1
-./scripts/batch_cli_test.ps1
-./scripts/policy_cli_test.ps1
-pwsh -NoProfile -File ./scripts/git_cli_test.ps1
-./scripts/build_web.ps1
-node ./scripts/browser_core_test.mjs
-node ./scripts/browser_ui_test.mjs
+pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
+pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-CLI 集成脚本使用 Windows 的 `.exe` 路径；浏览器核心测试需要 Node.js，且应在构建浏览器模块后运行。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略及 Git 版本审查集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+
+[CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
+
+工作流使用 `scripts/ci.ps1` 复用本地检查，并在成功或失败后上传安装及验证日志，保留 14 天。日志文件与构建产物不进入 Git。首次云端运行需在工作流推送后另行确认。
+
+CLI 集成脚本使用 Windows 的 `.exe` 路径，因此当前 CI 只覆盖 Windows；native 在 Linux／macOS 的运行验证尚未纳入。浏览器测试覆盖 MoonBit JS、Worker 与 DOM 模拟交互，不等同于真实浏览器端到端测试。
 
 ## 范围与限制
 
