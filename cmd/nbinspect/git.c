@@ -37,6 +37,25 @@ static int nb_append(nb_output *out, const unsigned char *data, size_t n) {
   out->size += n;
   return 0;
 }
+/* Check the decimal size without overflowing even for very large objects. */
+static int nb_check_blob_size(const nb_output *out, size_t limit) {
+  if (out->size < 2 || out->data[out->size - 1] != '\n') return 4;
+  size_t end = out->size - 1;
+  if (out->data[end - 1] == '\r') end--;
+  if (!end) return 4;
+  size_t size = 0;
+  int too_large = 0;
+  for (size_t i = 0; i < end; i++) {
+    unsigned char c = out->data[i];
+    if (c < '0' || c > '9') return 4;
+    size_t digit = (size_t)(c - '0');
+    if (!too_large) {
+      if (size > limit / 10 || (size == limit / 10 && digit > limit % 10)) too_large = 1;
+      else size = size * 10 + digit;
+    }
+  }
+  return too_large ? 2 : 0;
+}
 static char *nb_argument(moonbit_bytes_t bytes) {
   int32_t n = Moonbit_array_length(bytes);
   if (n < 0 || n > 16384 || memchr(bytes, 0, (size_t)n)) return NULL;
@@ -208,7 +227,17 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t nb_git(int32_t operation, moonbit_bytes_t a,
     argv[n++] = "--find-renames=50%"; argv[n++] = "-l1000";
     argv[n++] = first; argv[n++] = second; argv[n++] = "--";
   } else if (operation == 2) {
-    argv[n++] = "cat-file"; argv[n++] = "blob"; argv[n++] = first;
+    /* Reject oversized blobs before transferring their contents. The streaming
+     * limit remains active in case the size and content commands disagree. */
+    argv[n++] = "cat-file";
+    int format = n;
+    argv[n++] = "-s"; argv[n++] = first; argv[n] = NULL;
+    nb_output metadata = {NULL, 0, 0, 64};
+    status = nb_capture(argv, &metadata);
+    if (!status) status = nb_check_blob_size(&metadata, out.limit);
+    free(metadata.data);
+    if (status) goto done;
+    argv[format] = "blob";
   } else goto done;
   argv[n] = NULL;
   status = nb_capture(argv, &out);

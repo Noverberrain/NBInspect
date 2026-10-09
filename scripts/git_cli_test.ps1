@@ -148,7 +148,11 @@ $stream=[IO.File]::Create($large); $stream.SetLength(52428801); $stream.Dispose(
 $largeHead=Commit 'fixture oversized blob'
 $r=Review @('review-git',$partial,$largeHead,'--format','json') 2
 $largeResult=@($r.files | Where-Object path -eq 'oversized.ipynb')
-if ($largeResult.Count -ne 1 -or !$largeResult[0].error.Contains('byte limit')) {throw 'blob byte cap not enforced'}
+$largeBlob=Git @('rev-parse',($largeHead + ':oversized.ipynb'))
+Equal (Git @('cat-file','-s',$largeBlob)) '52428801' 'oversized fixture object size'
+if ($largeResult.Count -ne 1 -or !$largeResult[0].error.Contains('byte limit')) {
+  throw "blob byte cap not enforced: $($largeResult | ConvertTo-Json -Depth 12 -Compress)"
+}
 $sha256=Join-Path $fixtures 'sha256'; [IO.Directory]::CreateDirectory($sha256) | Out-Null
 $probe=Run-Process 'git' @('init','--object-format=sha256','-b','main') $sha256
 if ($probe.code -eq 0) {
