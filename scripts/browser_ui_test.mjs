@@ -4,7 +4,8 @@ import vm from 'node:vm';
 import * as core from '../web/nbinspect.js';
 
 const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review',
-  'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html'];
+  'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html',
+  'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name'];
 const elements = Object.fromEntries(ids.map(id => [id, {
   files: [], value: 'all', hidden: false, disabled: false, attributes: {}, listeners: {},
   addEventListener(event, callback) { this.listeners[event] = callback; },
@@ -13,7 +14,7 @@ const elements = Object.fromEntries(ids.map(id => [id, {
 }]));
 const blobs = new Map();
 const workers = [];
-const workerSource = (await readFile('web/worker.js', 'utf8')).replace(/^import .*;\n/, '');
+const workerSource = (await readFile('web/worker.js', 'utf8')).replace(/^import .*;\r?\n/, '');
 class Worker {
   constructor() {
     this.dead = false;
@@ -106,6 +107,70 @@ await trigger('review');
 assert.match(elements.status.textContent, /10 MiB/);
 assert.equal(blobs.size, 0);
 assert.ok(workers.every(worker => worker.dead));
+
+// Import, switch and reset actual MoonBit policies; invalid policies must not reuse old reports.
+const policyJson = '{"fail_on":"warning","rules":{"OUT001":{"severity":"error"}}}';
+elements['policy-file'].files = [{ name: '<img src=x onerror=alert(1)>.json', size: policyJson.length, text: async () => policyJson }];
+await trigger('policy-file', 'change');
+assert.match(elements['policy-status'].textContent, /已应用.*warning/);
+assert.equal(elements['policy-name'].textContent, '<img src=x onerror=alert(1)>.json');
+assert.equal(JSON.parse(elements['policy-effective'].textContent).rules.OUT001.severity, 'error');
+assert.equal(blobs.size, 0);
+await trigger('sample-review');
+assert.match(elements.status.textContent, /新增风险达到阻断级别/);
+const policyReport = JSON.parse(await blobs.get(elements.json.href).text());
+assert.equal(policyReport.policy.fail_on, 'warning');
+assert.equal(policyReport.policy.rules.OUT001.severity, 'error');
+assert.match(await blobs.get(elements.html.href).text(), /warning/);
+elements['risk-status'].value = 'existing';
+await trigger('risk-status', 'change');
+assert.equal(JSON.parse(await blobs.get(elements.json.href).text()).policy.fail_on, 'warning');
+await trigger('policy-reset');
+assert.equal(blobs.size, 0);
+assert.equal(elements['policy-effective'].hidden, true);
+await trigger('sample-review');
+assert.equal(JSON.parse(await blobs.get(elements.json.href).text()).policy.fail_on, 'error');
+
+elements['policy-file'].files = [{ name: 'bad.json', size: 2, text: async () => '{"unknown":1}' }];
+await trigger('policy-file', 'change');
+assert.match(elements['policy-status'].textContent, /configuration.*unknown/);
+assert.equal(elements.check.disabled, true);
+assert.equal(elements.review.disabled, true);
+assert.equal(blobs.size, 0);
+await trigger('check');
+assert.match(elements.status.textContent, /规则配置无效/);
+await trigger('sample');
+assert.match(elements.status.textContent, /比较完成/);
+elements['policy-file'].files = [{ name: 'huge.json', size: 1048577, text: async () => { throw Error('must not read'); } }];
+await trigger('policy-file', 'change');
+assert.match(elements['policy-status'].textContent, /1 MiB/);
+assert.equal(blobs.size, 0);
+elements['policy-file'].files = [{ name: 'unreadable.json', size: 1, text: async () => { throw Error('read failed'); } }];
+await trigger('policy-file', 'change');
+assert.match(elements['policy-status'].textContent, /read failed/);
+
+// A late file read must not undo a reset or a newer import.
+let finishRead;
+elements['policy-file'].files = [{ name: 'slow.json', size: 2, text: () => new Promise(resolve => { finishRead = resolve; }) }];
+await trigger('policy-file', 'change');
+assert.equal(elements.check.disabled, true);
+await trigger('policy-reset');
+finishRead(policyJson);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(elements['policy-name'].textContent, '默认规则');
+assert.equal(elements.review.disabled, false);
+let finishOld;
+elements['policy-file'].files = [{ name: 'old.json', size: 2, text: () => new Promise(resolve => { finishOld = resolve; }) }];
+await trigger('policy-file', 'change');
+elements['policy-file'].files = [{ name: 'new.json', size: 2, text: async () => '{}' }];
+await trigger('policy-file', 'change');
+finishOld(policyJson);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(elements['policy-name'].textContent, 'new.json');
+assert.equal(JSON.parse(elements['policy-effective'].textContent).fail_on, 'error');
+await trigger('policy-reset');
+assert.ok(workers.every(worker => worker.dead));
+console.log('Browser policy UI: import, effective settings, report downloads, invalid/oversized/read errors, reset, stale read and newer import races passed');
 
 // Ignored fixtures for the manual browser import check.
 await mkdir('_build/browser-fixtures', { recursive: true });

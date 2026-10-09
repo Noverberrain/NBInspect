@@ -6,6 +6,11 @@ let current = null;
 let downloadUrls = [];
 let lastMode = null;
 let sampleMode = false;
+let policyText = '';
+let policyLoading = false;
+let policyError = '';
+let policyVersion = 0;
+let policyWorker = null;
 
 const cell = (id, source) => ({ id, cell_type: 'code', source, metadata: {}, execution_count: null, outputs: [] });
 const prose = (id, source) => ({ id, cell_type: 'markdown', source, metadata: {} });
@@ -55,6 +60,11 @@ async function readNotebook(id) {
 }
 
 async function analyze(mode) {
+  if (policyLoading) return;
+  if (mode !== 'diff' && policyError) {
+    clearResult('规则配置无效，请重新导入或恢复默认规则。');
+    return;
+  }
   clearResult('正在分析…');
   const ownRun = runId;
   lastMode = mode;
@@ -102,7 +112,7 @@ async function analyze(mode) {
         link.setAttribute('aria-disabled', 'false');
       }
     };
-    worker.postMessage({ mode, before, after, view: element('view').value, riskStatus: element('risk-status').value });
+    worker.postMessage({ mode, before, after, view: element('view').value, riskStatus: element('risk-status').value, policy: policyText });
   } catch (error) {
     if (ownRun === runId) clearResult('分析失败：' + error.message);
   }
@@ -122,6 +132,88 @@ function showStatus() {
   }
 }
 
+function setPolicyButtons() {
+  for (const id of ['check', 'compare', 'review', 'sample', 'sample-review']) {
+    element(id).disabled = policyLoading || (policyError !== '' && ['check', 'review', 'sample-review'].includes(id));
+  }
+}
+
+function policyFailed(message) {
+  policyLoading = false;
+  policyError = message;
+  policyText = '';
+  element('policy-status').textContent = '配置无效：' + message + '。请重新导入或恢复默认规则。';
+  setPolicyButtons();
+}
+
+async function importPolicy() {
+  const version = ++policyVersion;
+  policyWorker?.terminate();
+  policyWorker = null;
+  policyText = '';
+  policyError = '';
+  policyLoading = true;
+  clearResult('发布规则已更改，旧报告已清空。');
+  element('policy-effective').hidden = true;
+  element('policy-effective').textContent = '';
+  element('policy-name').textContent = '正在读取…';
+  element('policy-status').textContent = '正在校验规则配置…';
+  setPolicyButtons();
+  const file = element('policy-file').files[0];
+  try {
+    if (!file) { resetPolicy(); return; }
+    element('policy-name').textContent = file.name;
+    if (file.size > 1024 * 1024) throw new Error('规则文件超过 1 MiB 限制');
+    const input = await file.text();
+    if (version !== policyVersion) return;
+    const worker = new Worker('./worker.js', { type: 'module' });
+    policyWorker = worker;
+    worker.onerror = event => {
+      if (version === policyVersion) {
+        worker.terminate();
+        policyWorker = null;
+        policyFailed('浏览器未能加载 MoonBit 模块');
+      }
+      event.preventDefault();
+    };
+    worker.onmessage = ({ data }) => {
+      if (version !== policyVersion) return;
+      worker.terminate();
+      policyWorker = null;
+      if (data.error) { policyFailed(data.error); return; }
+      policyText = input;
+      policyLoading = false;
+      const policy = data.policy;
+      const enabled = Object.values(policy.rules).filter(rule => rule.enabled).length;
+      element('policy-status').textContent = '已应用 · ' + policy.fail_on + ' 阻断 · 启用 ' + enabled + '/8 条规则 · 检查与风险审阅使用此策略，差异比较不受影响。';
+      element('policy-effective').textContent = JSON.stringify(policy, null, 2);
+      element('policy-effective').hidden = false;
+      setPolicyButtons();
+    };
+    worker.postMessage({ mode: 'policy', input });
+  } catch (error) {
+    if (version === policyVersion) policyFailed(error.message);
+  }
+}
+
+function resetPolicy() {
+  policyVersion++;
+  policyWorker?.terminate();
+  policyWorker = null;
+  policyText = '';
+  policyError = '';
+  policyLoading = false;
+  element('policy-file').value = '';
+  element('policy-name').textContent = '默认规则';
+  element('policy-status').textContent = '默认规则 · error 阻断 · 导入 JSON 可调整严重等级、启用规则及输出大小阈值。';
+  element('policy-effective').hidden = true;
+  element('policy-effective').textContent = '';
+  setPolicyButtons();
+  clearResult('已恢复默认规则，点击操作重新分析。');
+}
+
+element('policy-file').addEventListener('change', importPolicy);
+element('policy-reset').addEventListener('click', resetPolicy);
 element('check').addEventListener('click', () => analyze('check'));
 element('compare').addEventListener('click', () => analyze('diff'));
 element('review').addEventListener('click', () => analyze('review'));
@@ -142,4 +234,9 @@ element('risk-status').addEventListener('change', () => {
     activeWorker.postMessage({ mode: 'render', riskStatus: element('risk-status').value });
   }
 });
-window.addEventListener('pagehide', () => clearResult('选择文件开始分析。'));
+window.addEventListener('pagehide', () => {
+  policyVersion++;
+  policyWorker?.terminate();
+  policyWorker = null;
+  clearResult('选择文件开始分析。');
+});

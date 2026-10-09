@@ -90,3 +90,14 @@ footer{flex-direction:column}
 .risk-controls[hidden]{display:none}
 .risk-controls p{margin:0;color:var(--muted);font-size:12px;line-height:1.8;max-width:620px}
 @media(max-width:650px){.risk-controls{align-items:start;flex-direction:column;gap:12px}}
+
+.policy-panel{border:1px solid var(--line);background:var(--white);padding:15px 18px;margin-top:16px;font-size:13px}
+.policy-panel summary{cursor:pointer;line-height:1.6}
+.policy-panel summary span{color:var(--muted);margin-left:12px;overflow-wrap:anywhere}
+.policy-controls{display:flex;align-items:end;gap:16px;flex-wrap:wrap;margin-top:16px}
+.policy-controls label{display:grid;gap:8px;flex:1;min-width:0}
+.policy-controls input{width:100%;font-size:12px}
+.policy-controls button{border:1px solid var(--ink);background:transparent;color:var(--ink);padding:9px 12px}
+.policy-panel p{color:var(--muted);line-height:1.8;overflow-wrap:anywhere}
+.policy-panel pre{max-height:260px;overflow:auto;background:var(--wash);padding:12px;font:12px/1.7 Consolas,monospace}
+.policy-panel summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
