@@ -106,7 +106,33 @@ $bin = '.\_build\native\debug\build\cmd\nbinspect\nbinspect.exe'
 - 暂存区任何文件存在未解决的合并冲突，均返回 `2` 并在 stderr 说明原因，不输出成功报告。损坏 HEAD、索引或缺失对象同样报错；普通逐文件读取／格式错误保留其他结果，报告为 `incomplete`。
 - JSON 沿用 `kind: "git-review"`、`schema_version: 1`，新增 `source` 字段（`index` 或 `commits`）。暂存区模式为 `base_ref: "HEAD"`、`head_ref: "INDEX"`；`base_commit` 是解析后的 HEAD，首次提交时为 `null`；`head_commit` 为 `null`，不将暂存区伪装成提交。每个文件仍记录实际前后 Blob ID。文本与 HTML 明确标记 `Staged` 来源，首次提交标记 `first commit`。
 
-暂存区比较采用 [Git `diff --cached` 的语义](https://git-scm.com/docs/git-diff)，从子目录运行也检查整个仓库。这一功能提供 CLI 审阅入口，Git hook 安装另行开发。
+暂存区比较采用 [Git `diff --cached` 的语义](https://git-scm.com/docs/git-diff)，从子目录运行也检查整个仓库。可通过下面的 Git hook 在提交前自动执行。
+
+## Git 提交前自动检查
+
+在 Windows 上先构建 native 可执行文件，再为目标 Notebook 仓库安装 `pre-commit`：
+
+```powershell
+moon build --target native
+$rules = (Resolve-Path .\configs\sharing.json).Path
+pwsh -NoProfile -File .\scripts\git_hook.ps1 -Action Install -Repository 'E:\my-notebooks' -Config $rules
+```
+
+将 `E:\my-notebooks` 换成自己的 Git 仓库路径。`-Repository` 默认当前目录；从子目录指定时解析到仓库根目录。默认可执行文件为 NBInspect 的 `_build/native/debug/build/cmd/nbinspect/nbinspect.exe`；也可以通过 `-Executable` 指定已构建的 `.exe`，相对路径以调用脚本的当前目录为准。配置相对路径以目标仓库根目录为准；安装时转为绝对路径。可添加 `-FailOn error|warning|info` 显式覆盖配置文件的阻断级别，未指定时沿用配置或默认规则。
+
+安装后，`git commit` 自动运行 MoonBit 的 `review-git --staged --format text` 并在终端显示审阅结果。检查通过才提交；新增阻断风险、解析错误、配置无效或可执行文件不可用都会停止提交。hook 保留 Git 提供的环境，包括 `git commit --only` 使用的临时索引；未暂存的 Notebook 内容不会混入检查。
+
+卸载：
+
+```powershell
+pwsh -NoProfile -File .\scripts\git_hook.ps1 -Action Uninstall -Repository 'E:\my-notebooks'
+```
+
+- 安装和卸载只管理 `pre-commit`，不修改 Git 配置及其他 hook；已有的第三方 hook、目录、链接或修改过的 NBInspect hook 均保留并报错。使用 `core.hooksPath` 的仓库须在原有 hook 管理器中手动调用 `nbinspect.exe review-git --staged`，脚本不接管其配置。
+- 同一配置重复安装无需改写文件；更换可执行文件、配置路径或阻断级别时，先卸载再安装。生成文件使用 UTF-8 无 BOM、LF 换行并记录正文摘要，意外编辑后不会被自动删除；摘要用于识别改动，不是安全签名。
+- Git 默认 hooks 目录由同一仓库的 linked worktree 共享，安装／卸载会对这些工作区一起生效。配置文件按安装时的绝对路径读取，修改磁盘中的配置会影响下一次检查；不读取配置的暂存版本。
+- hook 的运行不需要 PowerShell，仅安装／卸载需要 PowerShell 7；运行依赖 Git for Windows 的 shell、Git 和 MoonBit native 可执行文件。移动／删除可执行文件或配置后须重新安装，克隆仓库不会自动安装 hook。
+- [Git 允许 `git commit --no-verify` 跳过 pre-commit](https://git-scm.com/docs/githooks)。这是本地辅助检查，不能替代云端审阅；本轮尚未提供第三方 hook 串联或 Linux／macOS 安装脚本。
 
 ## 发布规则配置
 
@@ -184,7 +210,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本及暂存区审阅集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅及 hook 真实提交集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 
