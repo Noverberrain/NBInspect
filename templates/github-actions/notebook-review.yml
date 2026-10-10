@@ -1,0 +1,117 @@
+# Copy this workflow and scripts/pr_review.ps1 as described in README.md.
+name: Notebook publication review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notebook-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Notebook publication review
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MOONBIT_VERSION: 0.10.14+7d59c7ec9
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - name: Checkout trusted baseline scripts and policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout Notebook history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/head
+          path: notebooks
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout pinned analyzer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Noverberrain/NBInspect
+          ref: 92b96d3f5b7a1556394ff5ba336c7c0f8892d7d9
+          path: analyzer
+          persist-credentials: false
+
+      - name: Verify PR checkout identity
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = git -C notebooks rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:HEAD_SHA) {
+            throw 'PR head changed during checkout; rerun for the new event.'
+          }
+
+      - name: Install pinned MoonBit and core
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:MOON_HOME = Join-Path $env:RUNNER_TEMP 'nbinspect-moonbit'
+          "MOON_HOME=$env:MOON_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          New-Item -ItemType Directory -Force 'setup-logs' | Out-Null
+          Start-Transcript -Path 'setup-logs/setup.log'
+          try {
+            $version = [Uri]::EscapeDataString($env:MOONBIT_VERSION)
+            $archives = @(
+              @{ Name = 'moonbit'; Url = "https://cli.moonbitlang.com/binaries/$version/moonbit-windows-x86_64.zip"; Hash = 'faae225a8287d0ce69e44b5b3f754af988e97f4446056d8f32ceb3ddb998fce7'; Destination = $env:MOON_HOME },
+              @{ Name = 'core'; Url = "https://cli.moonbitlang.com/cores/core-$version.zip"; Hash = '63e5b99991ac8fd49556b1e17bdcbdc662d797000250dd11ef090f38a2175e84'; Destination = (Join-Path $env:MOON_HOME 'lib') }
+            )
+            foreach ($archive in $archives) {
+              $zip = Join-Path $env:RUNNER_TEMP "$($archive.Name).zip"
+              Invoke-WebRequest -Uri $archive.Url -OutFile $zip -TimeoutSec 180 -MaximumRetryCount 2
+              if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $archive.Hash) {
+                throw "$($archive.Name) archive checksum mismatch"
+              }
+              Expand-Archive -LiteralPath $zip -DestinationPath $archive.Destination
+            }
+            $bin = Join-Path $env:MOON_HOME 'bin'
+            $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            $env:PATH = "$bin;$env:PATH"
+            Push-Location (Join-Path $env:MOON_HOME 'lib/core')
+            try {
+              foreach ($target in @('native')) {
+                moon bundle --target $target
+                if ($LASTEXITCODE -ne 0) { throw "Core bundle failed: $target" }
+              }
+            } finally { Pop-Location }
+          } finally { Stop-Transcript }
+
+      - name: Build pinned native analyzer
+        working-directory: analyzer
+        run: |
+          moon build --target native
+          if ($LASTEXITCODE -ne 0) { throw 'NBInspect native build failed' }
+
+      - name: Review Notebook changes
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./trusted/.github/nbinspect/pr_review.ps1 `
+            -Executable './analyzer/_build/native/debug/build/cmd/nbinspect/nbinspect.exe' `
+            -Repository './notebooks' -BaseCommit $env:BASE_SHA -HeadCommit $env:HEAD_SHA `
+            -Config './trusted/.github/nbinspect/policy.json' -ReportDirectory './reports'
+          exit $LASTEXITCODE
+
+      - name: Upload Notebook reports and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: notebook-review-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: |
+            reports/
+            setup-logs/
+          if-no-files-found: warn
+          retention-days: 14

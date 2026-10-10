@@ -35,7 +35,7 @@ try {
   }
   Invoke-Stage 'interfaces' 'git' @('diff', '--exit-code', '--', ':(glob)**/pkg.generated.mbti')
   Invoke-Stage 'native-build' 'moon' @('build', '--target', 'native')
-  foreach ($script in @('cli_test', 'batch_cli_test', 'policy_cli_test', 'git_cli_test', 'staged_cli_test', 'hook_cli_test')) {
+  foreach ($script in @('cli_test', 'batch_cli_test', 'policy_cli_test', 'git_cli_test', 'staged_cli_test', 'hook_cli_test', 'pr_review_test')) {
     Invoke-Stage $script $pwsh @('-NoProfile', '-File', "scripts/$script.ps1")
   }
   Invoke-Stage 'web-build' $pwsh @('-NoProfile', '-File', 'scripts/build_web.ps1')

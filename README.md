@@ -134,6 +134,40 @@ pwsh -NoProfile -File .\scripts\git_hook.ps1 -Action Uninstall -Repository 'E:\m
 - hook 的运行不需要 PowerShell，仅安装／卸载需要 PowerShell 7；运行依赖 Git for Windows 的 shell、Git 和 MoonBit native 可执行文件。移动／删除可执行文件或配置后须重新安装，克隆仓库不会自动安装 hook。
 - [Git 允许 `git commit --no-verify` 跳过 pre-commit](https://git-scm.com/docs/githooks)。这是本地辅助检查，不能替代云端审阅；本轮尚未提供第三方 hook 串联或 Linux／macOS 安装脚本。
 
+## GitHub PR 自动风险审阅
+
+仓库自带的 `.github/workflows/ci.yml` 验证 NBInspect 源码；另提供 [Notebook PR 工作流模板](templates/github-actions/notebook-review.yml)，供使用者的 Notebook 仓库检查提交内容。模板使用 `pull_request` 事件的 base／head 两个实际提交，不使用 GitHub 的模拟合并提交或自动寻找 merge-base。
+
+接入时，在目标 Notebook 仓库创建下面三个文件并先提交到 PR 的目标分支：
+
+| 本项目文件 | 复制到目标仓库 |
+| --- | --- |
+| `templates/github-actions/notebook-review.yml` | `.github/workflows/notebook-review.yml` |
+| `scripts/pr_review.ps1` | `.github/nbinspect/pr_review.ps1` |
+| `configs/sharing.json`（或自己的规则配置） | `.github/nbinspect/policy.json` |
+
+模板在 `windows-2022` 上分别检出目标分支的可信脚本／策略、Notebook 提交历史和固定版本的 NBInspect；校验 PR head 与事件一致，再构建 native 分析器。当前分析器固定到已推送的 `92b96d3f5b7a1556394ff5ba336c7c0f8892d7d9`，具备本模板需要的 `review-git` 功能；升级时替换为已审核的完整提交号。MoonBit／core 使用与项目 CI 相同的固定版本及 SHA-256，Actions 也固定到完整 SHA。
+
+- 运行 `review-git`，分别生成 `review.json` 和可离线打开的 `review.html`；一次读取规则并保存 `policy.json` 快照，两种格式使用同一份策略。不执行 Notebook、PR 中的脚本或 PR 版本的规则。
+- native 退出码 `0`：检查通过；`1`：有新增阻断风险；`2`：分析／输入失败。运行器校验报告提交号、格式和状态，JSON／HTML 退出码不同或报告损坏均按 `2` 失败，不用 `continue-on-error` 掩盖失败。
+- Job Summary 展示状态、两个提交号、文件及风险数量；Notebook 内容只保存在报告与日志产物中，摘要不包含任意 Notebook 文本。基础设施或 CLI 无法生成报告时，明确标记分析失败，保留已经产生的日志。
+- 无论审阅通过还是失败，上传步骤都尝试保存 `reports/` 与工具链安装日志，保留 14 天。运行器还保存 `summary.md`、native stdout／stderr；CLI／运行器失败时保留 `run-error.txt`。JSON 或 HTML 单文件超过 64 MiB 会让检查失败。
+- 使用 `contents: read`，不申请 PR 评论权限，不保存 checkout 凭据。通过基仓库的 `refs/pull/<number>/head` 读取 fork PR，head 在检出期间变化会失败并提示重新运行。缺失 Git 对象也会失败，不回退到其他提交。
+
+脚本可在本地对指定提交验证：
+
+```powershell
+$base = git -C 'E:\my-notebooks' rev-parse HEAD~1
+$head = git -C 'E:\my-notebooks' rev-parse HEAD
+pwsh -NoProfile -File .\scripts\pr_review.ps1 `
+  -Executable $bin -Repository 'E:\my-notebooks' -BaseCommit $base -HeadCommit $head `
+  -Config .\configs\sharing.json -ReportDirectory .\reports\pr-review
+```
+
+`ReportDirectory` 必须尚不存在，不覆盖旧产物；配置与可执行文件的相对路径以调用目录为准。可用 `-FailOn` 覆盖阻断级别，用 `-StepSummary FILE` 指定摘要文件；GitHub 上默认追加到 `GITHUB_STEP_SUMMARY`。每个格式最多运行 10 分钟，工作流任务上限 30 分钟；核心 Git 清单、文件数量及 Blob 限制不变。
+
+模板不会自动安装到其他仓库。需按仓库设置启用 Actions，fork PR 也可能需要维护者批准运行；如希望阻止合并，须将 `Notebook publication review` 配置为必需检查。模板运行机制参考 [GitHub PR 事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)、[Job Summary](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary) 和 [artifact 上传](https://github.com/actions/upload-artifact)。GitHub Enterprise、自托管 runner 和真实远程 PR 运行尚未验证；本地测试覆盖报告生成、失败路径与 fork 端点数据，actionlint 验证模板语法。
+
 ## 发布规则配置
 
 `check`、`review`、`batch` 和 `review-git` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
@@ -210,7 +244,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅及 hook 真实提交集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交及 PR 报告运行器集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 
