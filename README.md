@@ -168,6 +168,26 @@ pwsh -NoProfile -File .\scripts\pr_review.ps1 `
 
 模板不会自动安装到其他仓库。需按仓库设置启用 Actions，fork PR 也可能需要维护者批准运行；如希望阻止合并，须将 `Notebook publication review` 配置为必需检查。模板运行机制参考 [GitHub PR 事件](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)、[Job Summary](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary) 和 [artifact 上传](https://github.com/actions/upload-artifact)。GitHub Enterprise、自托管 runner 和真实远程 PR 运行尚未验证；本地测试覆盖报告生成、失败路径与 fork 端点数据，actionlint 验证模板语法。
 
+## Notebook 体积分析
+
+用 `profile` 定位占空间最多的单元格、输出和附件，无需执行 Notebook：
+
+```powershell
+& $bin profile .\notebook.ipynb
+& $bin profile .\notebook.ipynb --format json
+& $bin profile .\notebook.ipynb --format html --output .\size-report.html
+```
+
+报告按体积降序列出全部单元格和资源，附带从零开始的单元格索引、ID 和 JSON Pointer 路径；相同体积按索引／路径排序。MIME 汇总合并 display／execute_result 和附件中的同类型值，多个 MIME 表示分别统计，不选择渲染版本。流输出的文本和完整异常对象单列为资源，MIME 为 `null`，不人为赋予 MIME 类型。报告保留名称和定位信息，不复制源代码、文本输出、图片或其他资源正文。
+
+- 所有大小均为解析后**紧凑 JSON 序列化的 UTF-8 字节数**，包含字符串引号、转义和数组分隔符；保留 source 字符串／字符串数组的原有形式。不计原文件缩进和空白，不解码 base64，也不估算图片尺寸、内存占用或删除后准确节省的空间。
+- `summary` 中的 `source_bytes`、`output_bytes`、`attachment_bytes`、`other_bytes` 之和等于 `notebook_bytes`。输出统计整个 code 单元格的 outputs 数组，空数组仍占 2 字节；缺省 attachments 计 0，显式空对象计 2、`null` 计 4。其他字节包含元数据、扩展字段、键和外围结构。逐单元格也给出同样的四类分解。
+- MIME／资源字节仅计对应 JSON 值，不包含外围 MIME 键、附件名称及结构，不与输出／附件总量直接相加。JSON 沿用 `schema_version: 1`，`kind: "profile"`，`measurement: "compact-json-utf8"`；字节字段均为 JSON 数字。
+- 成功返回 `0`；输入、格式、参数或报告写入失败返回 `2`。体积分析不判断发布是否通过，不接受 `--config`、`--fail-on`、`--view`、`--exit-code`、`--recursive` 或 `--staged`。输入和已有报告仍受不覆盖保护。
+- 沿用 50 MiB 输入、10,000 个单元格及 nbformat 4.0–4.5 限制；最多统计 10,000 个资源值（每个 MIME 表示、流文本或异常对象各算一项），超限直接报错，不生成截断的成功报告。
+
+核心 API 为 `profile_report(parse(input))`，同时支持 native 与 JS；首版通过 CLI 使用和导出离线报告，浏览器演示尚未增加体积分析按钮。
+
 ## 发布规则配置
 
 `check`、`review`、`batch` 和 `review-git` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
@@ -244,7 +264,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交及 PR 报告运行器集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器及体积分析集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 

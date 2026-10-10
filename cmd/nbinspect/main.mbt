@@ -39,22 +39,26 @@ fn read(
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
   let command = args[0]
-  if command != "check" &&
+  if command != "profile" &&
+    command != "check" &&
     command != "diff" &&
     command != "review" &&
     command != "batch" &&
     command != "review-git" {
-    raise @nb.Invalid("expected check, diff, review, batch or review-git")
+    raise @nb.Invalid(
+      "expected profile, check, diff, review, batch or review-git",
+    )
   }
   let positional : Array[String] = []
   let mut format = "text"
   let mut output : String? = None
   let mut view = "all"
+  let mut explicit_view = false
   let mut fail_on = "error"
   let mut explicit_fail_on = false
   let mut config : String? = None
@@ -83,7 +87,10 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
       match arg {
         "--format" => format = value
         "--output" => output = Some(value)
-        "--view" => view = value
+        "--view" => {
+          view = value
+          explicit_view = true
+        }
         "--config" => config = Some(value)
         _ => {
           fail_on = value
@@ -107,13 +114,24 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if !["error", "warning", "info"].contains(fail_on) {
     raise @nb.Invalid("unknown fail-on")
   }
+  if command == "profile" &&
+    (
+      explicit_view ||
+      explicit_fail_on ||
+      config != None ||
+      exit_diff ||
+      recursive ||
+      staged
+    ) {
+    raise @nb.Invalid("profile accepts only --format and --output")
+  }
   if staged && command != "review-git" {
     raise @nb.Invalid("staged is a review-git option")
   }
   if positional.length() !=
     (if staged {
       0
-    } else if command == "check" || command == "batch" {
+    } else if command == "profile" || command == "check" || command == "batch" {
       1
     } else {
       2
@@ -166,7 +184,9 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     scan_batch(positional[0], recursive, policy)
   } else {
     let before = @nb.parse(read(positional[0]))
-    if command == "check" {
+    if command == "profile" {
+      @nb.profile_report(before)
+    } else if command == "check" {
       @nb.check_report(before, policy~)
     } else {
       let after = @nb.parse(read(positional[1]))
