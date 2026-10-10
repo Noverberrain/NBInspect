@@ -19,6 +19,7 @@ options(
         "nbinspect_analyze_with_policy",
         "nbinspect_review_with_policy",
         "nbinspect_parse_policy",
+        "nbinspect_profile",
       ],
     },
   },

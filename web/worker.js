@@ -1,4 +1,4 @@
-import { nbinspect_analyze_with_policy, nbinspect_parse_policy, nbinspect_render_report, nbinspect_review_with_policy, nbinspect_render_review } from './nbinspect.js';
+import { nbinspect_profile, nbinspect_analyze_with_policy, nbinspect_parse_policy, nbinspect_render_report, nbinspect_review_with_policy, nbinspect_render_review } from './nbinspect.js';
 
 let report = null;
 self.onmessage = ({ data }) => {
@@ -14,7 +14,9 @@ self.onmessage = ({ data }) => {
       self.postMessage({ filtered: true, riskStatus: data.riskStatus, displayHtml: nbinspect_render_review(JSON.stringify(report), data.riskStatus) });
       return;
     }
-    report = JSON.parse(data.mode === 'review'
+    report = JSON.parse(data.mode === 'profile'
+      ? nbinspect_profile(data.before)
+      : data.mode === 'review'
       ? nbinspect_review_with_policy(data.before, data.after, data.policy || '')
       : nbinspect_analyze_with_policy(data.before, data.after, data.view, data.policy || ''));
     if (report.error) throw new Error(report.error);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { nbinspect_analyze, nbinspect_render_report, nbinspect_review, nbinspect_render_review, nbinspect_analyze_with_policy, nbinspect_review_with_policy, nbinspect_parse_policy } from '../web/nbinspect.js';
+import { nbinspect_profile, nbinspect_analyze, nbinspect_render_report, nbinspect_review, nbinspect_render_review, nbinspect_analyze_with_policy, nbinspect_review_with_policy, nbinspect_parse_policy } from '../web/nbinspect.js';
 
 const cell = (id, source) => ({ id, cell_type: 'code', source, metadata: {}, execution_count: null, outputs: [] });
 const notebook = cells => JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells });
@@ -111,6 +111,40 @@ assert.match(JSON.parse(nbinspect_parse_policy(' '.repeat(1048577))).error, /1 M
 assert.match(JSON.parse(nbinspect_parse_policy('😀'.repeat(262145))).error, /1 MiB/);
 assert.match(JSON.parse(nbinspect_review_with_policy(policyBefore, policyAfter, '{"rules":{"BAD001":{}}}')).error, /BAD001/);
 
+
+// Browser profiles must match native reports byte-for-byte in meaning.
+const profileInput = notebook([
+  { ...cell('resources', ['你好\n', 'print(1)']), outputs: [
+    { output_type: 'stream', name: 'stdout', text: ['你好\n'] },
+    { output_type: 'display_data', data: { 'image/png': 'base64-placeholder', 'text/html': '<script>hidden-payload</script>' }, metadata: {} },
+    { output_type: 'error', ename: 'Demo', evalue: 'hidden-payload', traceback: [] },
+  ] },
+  { cell_type: 'markdown', id: '<img>', source: 'private-source', metadata: {}, attachments: {
+    'a~/~/.png': { 'image/png': 'AAAA' },
+    '<script>': { '<svg/onload=alert(1)>': { nested: 'hidden-payload' } },
+  } },
+]);
+await mkdir('_build/browser-profile-fixtures', { recursive: true });
+await writeFile('_build/browser-profile-fixtures/profile.ipynb', profileInput);
+const browserProfile = JSON.parse(nbinspect_profile(profileInput));
+const nativeProfile = spawnSync('_build/native/debug/build/cmd/nbinspect/nbinspect.exe', ['profile', '_build/browser-profile-fixtures/profile.ipynb', '--format', 'json'], { encoding: 'utf8' });
+assert.equal(nativeProfile.status, 0, nativeProfile.stderr);
+assert.deepEqual(browserProfile, JSON.parse(nativeProfile.stdout));
+assert.equal(browserProfile.resource_count, 6);
+assert.equal(browserProfile.measurement, 'compact-json-utf8');
+assert.ok(!JSON.stringify(browserProfile).includes('hidden-payload'));
+assert.ok(!JSON.stringify(browserProfile).includes('private-source'));
+const profileHtml = nbinspect_render_report(JSON.stringify(browserProfile));
+assert.match(profileHtml, /Cells by size/);
+assert.match(profileHtml, /&lt;script&gt;/);
+assert.ok(!profileHtml.includes('<script>'));
+assert.ok(!profileHtml.includes('<img>'));
+assert.equal(JSON.parse(nbinspect_profile(notebook([]))).cell_count, 0);
+for (const input of ['', '{', JSON.stringify({ ...JSON.parse(profileInput), nbformat_minor: 6 }), ' '.repeat(10485761), '😀'.repeat(2621441)]) {
+  assert.ok(JSON.parse(nbinspect_profile(input)).error);
+}
+const tooManyResources = notebook([{ ...cell('limit', ''), outputs: Array.from({ length: 10001 }, () => ({ output_type: 'stream', name: 'stdout', text: '' })) }]);
+assert.match(JSON.parse(nbinspect_profile(tooManyResources)).error, /resource limit/);
 // Exercise the actual Worker protocol, including cached rendering without rerunning analysis.
 const { resolve } = await import('node:path');
 const { pathToFileURL } = await import('node:url');
@@ -147,6 +181,17 @@ assert.equal(posted.filtered, true);
 assert.match(policyHtml, /warning/);
 self.onmessage({ data: { mode: 'policy', input: '{"rules":{"FMT002":{"severity":"info"}}}' } });
 assert.match(posted.error, /FMT002/);
+self.onmessage({ data: { mode: 'profile', before: profileInput, after: '{', view: 'code', policy: '{' } });
+assert.deepEqual(posted.report, browserProfile); // Only the first input is profiled; no policy/diff filter.
+assert.equal(posted.html, profileHtml);
+assert.equal(posted.displayHtml, profileHtml);
+self.onmessage({ data: { mode: 'render', riskStatus: 'all' } });
+assert.ok(posted.error); // A profile must not leave the preceding review cached.
+self.onmessage({ data: { mode: 'profile', before: '{' } });
+assert.ok(posted.error);
+self.onmessage({ data: { mode: 'profile', before: notebook([]) } });
+assert.equal(posted.report.cell_count, 0);
+console.log('Browser profile: native/JS parity, UTF-8 and resource limits, escaped offline HTML, independent Worker mode passed');
 delete globalThis.self;
 console.log('Browser policies: three templates match native CLI check/review, limits, disabled rules, strict validation and Worker protocol passed');
 console.log('Browser MoonBit bridge and Worker: check, diff, review, all risk filters, input limits, diagnostics, escaped HTML passed');

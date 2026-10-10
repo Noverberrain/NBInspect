@@ -32,6 +32,18 @@ const riskAfter = notebook([
   failedCell(undefined, 'omega()', 'unmatched new error'),
 ]);
 
+
+// Stored media are counted as JSON values; no sample payload is rendered.
+const profileSample = notebook([
+  cell('setup', 'values = list(range(1000))\n'),
+  { ...cell('results', 'print(values)\n'), outputs: [
+    { output_type: 'stream', name: 'stdout', text: '示例运行输出：0, 1, 2, 3, 4\n'.repeat(800) },
+    { output_type: 'display_data', data: { 'image/png': 'iVBORw0KGgo=', 'text/html': '<p>示例结果</p>' }, metadata: {} },
+  ] },
+  { ...prose('notes', '![示例图](attachment:demo.svg)\n'), attachments: {
+    'demo.svg': { 'image/svg+xml': '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8"/></svg>' },
+  } },
+]);
 function clearResult(message) {
   runId++;
   activeWorker?.terminate();
@@ -60,8 +72,8 @@ async function readNotebook(id) {
 }
 
 async function analyze(mode) {
-  if (policyLoading) return;
-  if (mode !== 'diff' && policyError) {
+  if (policyLoading && mode !== 'profile') return;
+  if (['check', 'review'].includes(mode) && policyError) {
     clearResult('规则配置无效，请重新导入或恢复默认规则。');
     return;
   }
@@ -69,8 +81,8 @@ async function analyze(mode) {
   const ownRun = runId;
   lastMode = mode;
   try {
-    const before = sampleMode ? (mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
-    const after = mode === 'check' ? '' : sampleMode ? (mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
+    const before = sampleMode ? (mode === 'profile' ? profileSample : mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
+    const after = ['check', 'profile'].includes(mode) ? '' : sampleMode ? (mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
     if (ownRun !== runId) return;
     const worker = new Worker('./worker.js', { type: 'module' });
     activeWorker = worker;
@@ -108,7 +120,7 @@ async function analyze(mode) {
         downloadUrls.push(url);
         const link = element(kind);
         link.href = url;
-        link.download = 'nbinspect-report.' + kind;
+        link.download = (data.report.kind === 'profile' ? 'nbinspect-profile.' : 'nbinspect-report.') + kind;
         link.setAttribute('aria-disabled', 'false');
       }
     };
@@ -120,7 +132,10 @@ async function analyze(mode) {
 
 function showStatus() {
   const report = current.report;
-  if (report.kind === 'review') {
+  if (report.kind === 'profile') {
+    const s = report.summary;
+    element('status').textContent = '体积分析完成 · 紧凑 JSON ' + s.notebook_bytes.toLocaleString('zh-CN') + ' 字节 · 输出 ' + s.output_bytes.toLocaleString('zh-CN') + ' / 附件 ' + s.attachment_bytes.toLocaleString('zh-CN') + ' 字节 · ' + report.cell_count + ' 个单元格';
+  } else if (report.kind === 'review') {
     const s = report.summary;
     const filter = element('risk-status').value;
     const visible = filter === 'all' ? report.changes.length : s[filter];
@@ -133,8 +148,8 @@ function showStatus() {
 }
 
 function setPolicyButtons() {
-  for (const id of ['check', 'compare', 'review', 'sample', 'sample-review']) {
-    element(id).disabled = policyLoading || (policyError !== '' && ['check', 'review', 'sample-review'].includes(id));
+  for (const id of ['check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile']) {
+    element(id).disabled = (policyLoading && !['profile', 'sample-profile'].includes(id)) || (policyError !== '' && ['check', 'review', 'sample-review'].includes(id));
   }
 }
 
@@ -185,7 +200,7 @@ async function importPolicy() {
       policyLoading = false;
       const policy = data.policy;
       const enabled = Object.values(policy.rules).filter(rule => rule.enabled).length;
-      element('policy-status').textContent = '已应用 · ' + policy.fail_on + ' 阻断 · 启用 ' + enabled + '/8 条规则 · 检查与风险审阅使用此策略，差异比较不受影响。';
+      element('policy-status').textContent = '已应用 · ' + policy.fail_on + ' 阻断 · 启用 ' + enabled + '/8 条规则 · 检查与风险审阅使用此策略，差异比较与体积分析不受影响。';
       element('policy-effective').textContent = JSON.stringify(policy, null, 2);
       element('policy-effective').hidden = false;
       setPolicyButtons();
@@ -215,6 +230,8 @@ function resetPolicy() {
 element('policy-file').addEventListener('change', importPolicy);
 element('policy-reset').addEventListener('click', resetPolicy);
 element('check').addEventListener('click', () => analyze('check'));
+element('profile').addEventListener('click', () => { sampleMode = false; analyze('profile'); });
+element('sample-profile').addEventListener('click', () => { sampleMode = true; analyze('profile'); });
 element('compare').addEventListener('click', () => analyze('diff'));
 element('review').addEventListener('click', () => analyze('review'));
 element('sample-review').addEventListener('click', () => { sampleMode = true; analyze('review'); });
@@ -222,7 +239,7 @@ element('sample').addEventListener('click', () => { sampleMode = true; analyze('
 for (const id of ['before', 'after']) {
   element(id).addEventListener('change', () => {
     sampleMode = false;
-    clearResult('文件已选择。点击“检查”“比较”或“审阅发布风险”开始分析。');
+    clearResult('文件已选择。点击“检查”“比较”“审阅发布风险”或“分析原始文件体积”开始分析。');
   });
 }
 element('view').addEventListener('change', () => {

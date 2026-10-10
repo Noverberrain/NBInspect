@@ -93,3 +93,14 @@ pub fn nbinspect_parse_policy(input : String) -> String {
   }
   result.stringify()
 }
+
+///|
+/// Profile one Notebook locally, independently of publication policy.
+/// Use the same compact JSON UTF-8 measurement as the native CLI.
+#export_name("nbinspect_profile")
+pub fn nbinspect_profile(input : String) -> String {
+  let result : Json = @nb.profile_report(@nb.parse(input, max_bytes=10485760)) catch {
+    @nb.Invalid(message) => { "error": message }
+  }
+  result.stringify()
+}

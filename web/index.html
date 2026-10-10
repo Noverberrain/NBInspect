@@ -29,7 +29,7 @@
         <label class="file-card" for="before">
           <span class="card-top"><span class="step">01</span><span>必选</span></span>
           <span class="card-title">原始文件</span>
-          <span class="card-hint">发布检查与差异比较都从这里开始</span>
+          <span class="card-hint">发布检查、体积分析与差异比较都从这里开始</span>
           <input id="before" type="file" accept=".ipynb,application/json">
         </label>
         <label class="file-card" for="after">
@@ -50,7 +50,7 @@
       </details>
       <div class="toolbar">
         <div class="filter"><label for="view">差异显示范围</label><select id="view"><option value="all">全部差异</option><option value="code">仅代码</option><option value="content">代码与文字</option></select></div>
-        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="review" type="button">审阅发布风险 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用差异示例</button><button id="sample-review" type="button" class="outline">试用风险示例</button></div>
+        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="review" type="button">审阅发布风险 <span aria-hidden="true">↗</span></button><button id="profile" type="button">分析原始文件体积 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用差异示例</button><button id="sample-review" type="button" class="outline">试用风险示例</button><button id="sample-profile" type="button" class="outline">试用体积示例</button></div>
       </div>
     </section>
 

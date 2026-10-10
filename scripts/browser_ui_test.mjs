@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as core from '../web/nbinspect.js';
 
-const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review',
+const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile',
   'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html',
   'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name'];
 const elements = Object.fromEntries(ids.map(id => [id, {
@@ -33,9 +33,10 @@ class Worker {
   terminate() { this.dead = true; }
 }
 let nextBlob = 0;
+const windowListeners = {};
 const context = {
   document: { getElementById: id => elements[id] },
-  window: { addEventListener() {} },
+  window: { addEventListener(event, callback) { windowListeners[event] = callback; } },
   Worker, Blob,
   URL: {
     createObjectURL(blob) { const url = 'blob:test/' + ++nextBlob; blobs.set(url, blob); return url; },
@@ -172,6 +173,102 @@ await trigger('policy-reset');
 assert.ok(workers.every(worker => worker.dead));
 console.log('Browser policy UI: import, effective settings, report downloads, invalid/oversized/read errors, reset, stale read and newer import races passed');
 
+
+// Profile sample, downloads and a single selected file with an unreadable second file.
+await trigger('sample-profile');
+assert.match(elements.status.textContent, /体积分析完成.*紧凑 JSON/);
+assert.equal(elements['risk-controls'].hidden, true);
+assert.equal(elements['risk-status'].disabled, true);
+assert.equal(elements.json.download, 'nbinspect-profile.json');
+assert.equal(elements.html.download, 'nbinspect-profile.html');
+const sampleProfile = JSON.parse(await blobs.get(elements.json.href).text());
+assert.equal(sampleProfile.kind, 'profile');
+assert.equal(sampleProfile.cell_count, 3);
+assert.equal(sampleProfile.resource_count, 4);
+assert.ok(sampleProfile.summary.output_bytes > sampleProfile.summary.attachment_bytes);
+assert.ok(!sampleProfile.policy);
+assert.match(await blobs.get(elements.html.href).text(), /MIME payloads/);
+assert.match(elements.report.srcdoc, /Stored resources by size/);
+assert.equal(blobs.size, 2);
+assert.ok(workers.every(worker => worker.dead));
+// The original-file button must not silently reuse a preceding demo.
+elements.before.files = [];
+await trigger('profile');
+assert.match(elements.status.textContent, /请选择原始/);
+await trigger('sample-profile');
+const sampleProfileUrl = elements.json.href;
+elements.before.files = [{ size: before.length, text: async () => before }];
+elements.after.files = [{ size: 1, text: async () => { throw Error('profile must not read second file'); } }];
+await trigger('before', 'change');
+await trigger('profile');
+assert.match(elements.status.textContent, /体积分析完成.*0 个单元格/);
+assert.equal(JSON.parse(await blobs.get(elements.json.href).text()).cell_count, 0);
+assert.ok(!blobs.has(sampleProfileUrl));
+
+// Invalid and loading publication policies cannot disable this independent operation.
+elements['policy-file'].files = [{ name: 'invalid.json', size: 1, text: async () => '{' }];
+await trigger('policy-file', 'change');
+assert.equal(elements.profile.disabled, false);
+assert.equal(elements['sample-profile'].disabled, false);
+await trigger('profile');
+assert.match(elements.status.textContent, /体积分析完成/);
+let finishProfilePolicy;
+elements['policy-file'].files = [{ name: 'pending.json', size: 2, text: () => new Promise(resolve => { finishProfilePolicy = resolve; }) }];
+await trigger('policy-file', 'change');
+assert.equal(elements.check.disabled, true);
+assert.equal(elements.profile.disabled, false);
+await trigger('sample-profile');
+assert.match(elements.status.textContent, /体积分析完成/);
+finishProfilePolicy('{}');
+await new Promise(resolve => setImmediate(resolve));
+assert.match(elements.status.textContent, /体积分析完成/);
+await trigger('policy-reset');
+assert.equal(blobs.size, 0);
+
+// Error paths remove the last report and never make downloadable success artifacts.
+elements.before.files = [];
+await trigger('before', 'change');
+await trigger('profile');
+assert.match(elements.status.textContent, /请选择原始/);
+elements.before.files = [{ size: 1, text: async () => '{' }];
+await trigger('profile');
+assert.match(elements.status.textContent, /分析失败/);
+assert.equal(elements.json.attributes['aria-disabled'], 'true');
+elements.before.files = [{ size: 10485761, text: async () => { throw Error('must not read'); } }];
+await trigger('profile');
+assert.match(elements.status.textContent, /10 MiB/);
+elements.before.files = [{ size: 1, text: async () => { throw Error('profile read failed'); } }];
+await trigger('profile');
+assert.match(elements.status.textContent, /profile read failed/);
+assert.equal(blobs.size, 0);
+
+// Late file reads and old Worker callbacks must not replace a newer result.
+let finishProfileRead;
+elements.before.files = [{ size: 1, text: () => new Promise(resolve => { finishProfileRead = resolve; }) }];
+await trigger('profile');
+await trigger('sample-review');
+const latestUrl = elements.json.href;
+finishProfileRead(before);
+await new Promise(resolve => setImmediate(resolve));
+assert.match(elements.status.textContent, /审阅完成/);
+assert.equal(elements.json.href, latestUrl);
+const oldReviewWorker = workers.at(-1);
+await trigger('sample-profile');
+const latestProfileUrl = elements.json.href;
+oldReviewWorker.onmessage({ data: { error: 'stale failure' } });
+assert.match(elements.status.textContent, /体积分析完成/);
+assert.equal(elements.json.href, latestProfileUrl);
+elements.view.value = 'code';
+await trigger('view', 'change');
+assert.equal(elements.json.href, latestProfileUrl);
+await trigger('sample');
+assert.match(elements.status.textContent, /比较完成/);
+await trigger('sample-profile');
+windowListeners.pagehide();
+assert.equal(blobs.size, 0);
+assert.equal(elements.report.hidden, true);
+assert.ok(workers.every(worker => worker.dead));
+console.log('Browser profile UI: samples/imports, policy independence, downloads, invalid/oversized/read errors, stale results, cleanup passed');
 // Ignored fixtures for the manual browser import check.
 await mkdir('_build/browser-fixtures', { recursive: true });
 await writeFile('_build/browser-fixtures/before.ipynb', before);
