@@ -20,6 +20,7 @@ options(
         "nbinspect_review_with_policy",
         "nbinspect_parse_policy",
         "nbinspect_profile",
+        "nbinspect_profile_diff",
       ],
     },
   },

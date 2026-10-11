@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { nbinspect_profile, nbinspect_analyze, nbinspect_render_report, nbinspect_review, nbinspect_render_review, nbinspect_analyze_with_policy, nbinspect_review_with_policy, nbinspect_parse_policy } from '../web/nbinspect.js';
+import { nbinspect_profile_diff, nbinspect_profile, nbinspect_analyze, nbinspect_render_report, nbinspect_review, nbinspect_render_review, nbinspect_analyze_with_policy, nbinspect_review_with_policy, nbinspect_parse_policy } from '../web/nbinspect.js';
 
 const cell = (id, source) => ({ id, cell_type: 'code', source, metadata: {}, execution_count: null, outputs: [] });
 const notebook = cells => JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells });
@@ -192,6 +192,63 @@ assert.ok(posted.error);
 self.onmessage({ data: { mode: 'profile', before: notebook([]) } });
 assert.equal(posted.report.cell_count, 0);
 console.log('Browser profile: native/JS parity, UTF-8 and resource limits, escaped offline HTML, independent Worker mode passed');
+// Two-input storage bridge: same reports as native, including signed changes and ambiguity.
+const sizeBefore = await readFile('examples/profile-before.ipynb', 'utf8');
+const sizeAfter = await readFile('examples/profile-after.ipynb', 'utf8');
+for (const [first, second, firstPath, secondPath] of [
+  [sizeBefore, sizeAfter, 'examples/profile-before.ipynb', 'examples/profile-after.ipynb'],
+  [sizeAfter, sizeBefore, 'examples/profile-after.ipynb', 'examples/profile-before.ipynb'],
+]) {
+  const result = JSON.parse(nbinspect_profile_diff(first, second));
+  const native = spawnSync('_build/native/debug/build/cmd/nbinspect/nbinspect.exe', ['profile-diff', firstPath, secondPath, '--format', 'json'], { encoding: 'utf8' });
+  assert.equal(native.status, 0, native.stderr);
+  assert.deepEqual(result, JSON.parse(native.stdout));
+  assert.equal(result.cells.reduce((total, row) => total + row.delta_bytes, result.container_delta_bytes), result.summary.delta.notebook_bytes);
+  assert.ok(result.cells.some(row => row.moved));
+}
+const sizeReport = JSON.parse(nbinspect_profile_diff(sizeBefore, sizeAfter));
+assert.equal(sizeReport.kind, 'profile-diff');
+assert.ok(sizeReport.summary.delta.notebook_bytes > 0);
+assert.ok(sizeReport.cells.some(row => row.delta_bytes < 0));
+assert.equal(JSON.parse(nbinspect_profile_diff(sizeAfter, sizeBefore)).summary.delta.notebook_bytes, -sizeReport.summary.delta.notebook_bytes);
+const duplicateCells = notebook([cell(undefined, 'same'), cell(undefined, 'same')]);
+const duplicateReport = JSON.parse(nbinspect_profile_diff(duplicateCells, duplicateCells));
+assert.deepEqual(duplicateReport.ambiguous_before, [0, 1]);
+assert.equal(duplicateReport.matched_count, 0);
+assert.equal(duplicateReport.cells.length, 4);
+assert.equal(duplicateReport.summary.delta.notebook_bytes, 0);
+const equalReport = JSON.parse(nbinspect_profile_diff(before, before));
+assert.ok(equalReport.cells.every(row => row.delta_bytes === 0));
+assert.equal(equalReport.matched_count, 2);
+assert.equal(JSON.parse(nbinspect_profile_diff(notebook([]), notebook([]))).summary.delta.notebook_bytes, 0);
+const sizeHtml = nbinspect_render_report(JSON.stringify(sizeReport));
+assert.match(sizeHtml, /Cells by absolute size change/);
+assert.match(sizeHtml, /Cell measurements and matching evidence/);
+const hostileSize = JSON.parse(nbinspect_profile_diff(profileInput, profileInput));
+const hostileSizeHtml = nbinspect_render_report(JSON.stringify(hostileSize));
+assert.match(hostileSizeHtml, /&lt;img&gt;/);
+assert.ok(!/<script|<img|<svg/i.test(hostileSizeHtml));
+assert.ok(!hostileSizeHtml.includes('hidden-payload'));
+for (const badInput of ['', '{', JSON.stringify({ ...JSON.parse(before), nbformat_minor: 6 }), ' '.repeat(10485761), '😀'.repeat(2621441), tooManyResources]) {
+  for (const [first, second] of [[badInput, before], [before, badInput]]) {
+    assert.ok(JSON.parse(nbinspect_profile_diff(first, second)).error);
+  }
+}
+const budgetBefore = notebook(Array.from({ length: 1100 }, (_, i) => cell(undefined, 'old_' + i)));
+const budgetAfter = notebook(Array.from({ length: 1100 }, (_, i) => cell(undefined, 'new_' + i)));
+assert.match(JSON.parse(nbinspect_profile_diff(budgetBefore, budgetAfter)).error, /candidate budget exceeded/);
+self.onmessage({ data: { mode: 'review', before: riskBefore, after: riskAfter, riskStatus: 'all' } });
+self.onmessage({ data: { mode: 'profile-diff', before: sizeBefore, after: sizeAfter, view: 'code', riskStatus: 'introduced', policy: '{' } });
+assert.deepEqual(posted.report, sizeReport);
+assert.equal(posted.html, sizeHtml);
+assert.equal(posted.displayHtml, sizeHtml);
+self.onmessage({ data: { mode: 'render', riskStatus: 'all' } });
+assert.ok(posted.error); // No stale risk-review cache after a size comparison.
+for (const [first, second] of [['{', sizeAfter], [sizeBefore, '{']]) {
+  self.onmessage({ data: { mode: 'profile-diff', before: first, after: second } });
+  assert.ok(posted.error);
+}
+console.log('Browser profile-diff: native parity in both directions, zero/negative changes, movement, ambiguous duplicates, both-input limits, matching budget, escaped HTML and Worker isolation passed');
 delete globalThis.self;
 console.log('Browser policies: three templates match native CLI check/review, limits, disabled rules, strict validation and Worker protocol passed');
 console.log('Browser MoonBit bridge and Worker: check, diff, review, all risk filters, input limits, diagnostics, escaped HTML passed');

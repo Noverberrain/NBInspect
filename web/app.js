@@ -44,6 +44,14 @@ const profileSample = notebook([
     'demo.svg': { 'image/svg+xml': '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8"/></svg>' },
   } },
 ]);
+// Handwritten storage changes, not execution results: move notes, grow output/attachment.
+const profileAfter = JSON.parse(profileSample);
+profileAfter.cells = [profileAfter.cells[2], profileAfter.cells[0], profileAfter.cells[1]];
+profileAfter.cells[0].attachments['demo.svg']['image/svg+xml'] += ' '.repeat(200);
+profileAfter.cells[2].source = 'print(values[:200])\n';
+profileAfter.cells[2].outputs[0].text += '新增示例输出\n'.repeat(400);
+const profileDiffSampleAfter = JSON.stringify(profileAfter);
+
 function clearResult(message) {
   runId++;
   activeWorker?.terminate();
@@ -72,7 +80,7 @@ async function readNotebook(id) {
 }
 
 async function analyze(mode) {
-  if (policyLoading && mode !== 'profile') return;
+  if (policyLoading && !['profile', 'profile-diff'].includes(mode)) return;
   if (['check', 'review'].includes(mode) && policyError) {
     clearResult('规则配置无效，请重新导入或恢复默认规则。');
     return;
@@ -81,8 +89,8 @@ async function analyze(mode) {
   const ownRun = runId;
   lastMode = mode;
   try {
-    const before = sampleMode ? (mode === 'profile' ? profileSample : mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
-    const after = ['check', 'profile'].includes(mode) ? '' : sampleMode ? (mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
+    const before = sampleMode ? (['profile', 'profile-diff'].includes(mode) ? profileSample : mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
+    const after = ['check', 'profile'].includes(mode) ? '' : sampleMode ? (mode === 'profile-diff' ? profileDiffSampleAfter : mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
     if (ownRun !== runId) return;
     const worker = new Worker('./worker.js', { type: 'module' });
     activeWorker = worker;
@@ -120,7 +128,7 @@ async function analyze(mode) {
         downloadUrls.push(url);
         const link = element(kind);
         link.href = url;
-        link.download = (data.report.kind === 'profile' ? 'nbinspect-profile.' : 'nbinspect-report.') + kind;
+        link.download = (['profile', 'profile-diff'].includes(data.report.kind) ? 'nbinspect-' + data.report.kind + '.' : 'nbinspect-report.') + kind;
         link.setAttribute('aria-disabled', 'false');
       }
     };
@@ -132,7 +140,11 @@ async function analyze(mode) {
 
 function showStatus() {
   const report = current.report;
-  if (report.kind === 'profile') {
+  if (report.kind === 'profile-diff') {
+    const s = report.summary.delta;
+    const signed = value => (value > 0 ? '+' : '') + value.toLocaleString('zh-CN');
+    element('status').textContent = '体积比较完成 · 紧凑 JSON 增减 ' + signed(s.notebook_bytes) + ' 字节 · 正文 ' + signed(s.source_bytes) + ' / 输出 ' + signed(s.output_bytes) + ' / 附件 ' + signed(s.attachment_bytes) + ' / 其他 ' + signed(s.other_bytes) + ' 字节 · 匹配 ' + report.matched_count + ' 对 / 未匹配 ' + report.unmatched_before_count + ' → ' + report.unmatched_after_count + ' · 旧单元格歧义 ' + report.ambiguous_before.length + ' 项' + (report.ambiguous_before.length ? '（需人工复核）' : '');
+  } else if (report.kind === 'profile') {
     const s = report.summary;
     element('status').textContent = '体积分析完成 · 紧凑 JSON ' + s.notebook_bytes.toLocaleString('zh-CN') + ' 字节 · 输出 ' + s.output_bytes.toLocaleString('zh-CN') + ' / 附件 ' + s.attachment_bytes.toLocaleString('zh-CN') + ' 字节 · ' + report.cell_count + ' 个单元格';
   } else if (report.kind === 'review') {
@@ -148,8 +160,8 @@ function showStatus() {
 }
 
 function setPolicyButtons() {
-  for (const id of ['check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile']) {
-    element(id).disabled = (policyLoading && !['profile', 'sample-profile'].includes(id)) || (policyError !== '' && ['check', 'review', 'sample-review'].includes(id));
+  for (const id of ['check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff']) {
+    element(id).disabled = (policyLoading && !['profile', 'sample-profile', 'profile-diff', 'sample-profile-diff'].includes(id)) || (policyError !== '' && ['check', 'review', 'sample-review'].includes(id));
   }
 }
 
@@ -232,6 +244,8 @@ element('policy-reset').addEventListener('click', resetPolicy);
 element('check').addEventListener('click', () => analyze('check'));
 element('profile').addEventListener('click', () => { sampleMode = false; analyze('profile'); });
 element('sample-profile').addEventListener('click', () => { sampleMode = true; analyze('profile'); });
+element('profile-diff').addEventListener('click', () => { sampleMode = false; analyze('profile-diff'); });
+element('sample-profile-diff').addEventListener('click', () => { sampleMode = true; analyze('profile-diff'); });
 element('compare').addEventListener('click', () => analyze('diff'));
 element('review').addEventListener('click', () => analyze('review'));
 element('sample-review').addEventListener('click', () => { sampleMode = true; analyze('review'); });
@@ -239,7 +253,7 @@ element('sample').addEventListener('click', () => { sampleMode = true; analyze('
 for (const id of ['before', 'after']) {
   element(id).addEventListener('change', () => {
     sampleMode = false;
-    clearResult('文件已选择。点击“检查”“比较”“审阅发布风险”或“分析原始文件体积”开始分析。');
+    clearResult('文件已选择。点击“检查”“比较”“审阅发布风险”、“分析原始文件体积”或“比较体积变化”开始分析。');
   });
 }
 element('view').addEventListener('change', () => {

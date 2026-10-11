@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as core from '../web/nbinspect.js';
 
-const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile',
+const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff',
   'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html',
   'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name'];
 const elements = Object.fromEntries(ids.map(id => [id, {
@@ -274,3 +274,116 @@ await mkdir('_build/browser-fixtures', { recursive: true });
 await writeFile('_build/browser-fixtures/before.ipynb', before);
 await writeFile('_build/browser-fixtures/after.ipynb', after);
 console.log('Browser UI: risk sample, all filters, complete JSON/HTML blobs, check/diff regression, File.text import, empty/error/size states, cleanup passed');
+
+// Version sizes: real two-file selection, signed summaries and complete downloads.
+const sizeBefore = await readFile('examples/profile-before.ipynb', 'utf8');
+const sizeAfter = await readFile('examples/profile-after.ipynb', 'utf8');
+const selectSizeFiles = async (first = sizeBefore, second = sizeAfter) => {
+  elements.before.files = [{ size: Buffer.byteLength(first), text: async () => first }];
+  elements.after.files = [{ size: Buffer.byteLength(second), text: async () => second }];
+  await trigger('before', 'change');
+};
+await trigger('sample-profile-diff');
+assert.match(elements.status.textContent, /体积比较完成.*增减 \+/);
+const sizeSample = JSON.parse(await blobs.get(elements.json.href).text());
+assert.equal(sizeSample.kind, 'profile-diff');
+assert.equal(sizeSample.matched_count, 3);
+assert.ok(sizeSample.cells.some(row => row.moved));
+assert.equal(elements['risk-controls'].hidden, true);
+assert.equal(elements['risk-status'].disabled, true);
+assert.equal(elements.json.download, 'nbinspect-profile-diff.json');
+assert.equal(elements.html.download, 'nbinspect-profile-diff.html');
+assert.match(await blobs.get(elements.html.href).text(), /Cell measurements and matching evidence/);
+assert.ok(!sizeSample.policy);
+const oldSizeSampleUrl = elements.json.href;
+elements.before.files = [];
+await trigger('profile-diff'); // Real-file button cannot silently reuse the demo.
+assert.match(elements.status.textContent, /请选择原始/);
+assert.ok(!blobs.has(oldSizeSampleUrl));
+await selectSizeFiles();
+elements.after.files = [];
+await trigger('profile-diff');
+assert.match(elements.status.textContent, /请选择修改后/);
+await selectSizeFiles();
+await trigger('profile-diff');
+const sizeSelected = JSON.parse(await blobs.get(elements.json.href).text());
+assert.deepEqual(sizeSelected, JSON.parse(core.nbinspect_profile_diff(sizeBefore, sizeAfter)));
+assert.match(elements.status.textContent, /正文.*输出.*附件.*其他/);
+assert.match(elements.status.textContent, /匹配 3 对/);
+const selectedSizeUrl = elements.json.href;
+elements.view.value = 'content';
+await trigger('view', 'change');
+await trigger('risk-status', 'change');
+assert.equal(elements.json.href, selectedSizeUrl); // Display filters do not recalculate sizes.
+await selectSizeFiles(sizeAfter, sizeBefore);
+await trigger('profile-diff');
+assert.match(elements.status.textContent, /增减 -/);
+await selectSizeFiles(sizeBefore, sizeBefore);
+await trigger('profile-diff');
+assert.match(elements.status.textContent, /增减 0 字节/);
+const repeatedSize = notebook([0, 1].map(() => ({ cell_type: 'code', source: 'same', metadata: {}, execution_count: null, outputs: [] })));
+await selectSizeFiles(repeatedSize, repeatedSize);
+await trigger('profile-diff');
+assert.match(elements.status.textContent, /未匹配 2 → 2.*歧义 2 项/);
+assert.equal(JSON.parse(await blobs.get(elements.json.href).text()).cells.length, 4);
+
+// Size comparison remains available with invalid or loading publication rules.
+elements['policy-file'].files = [{ name: 'bad.json', size: 1, text: async () => '{' }];
+await trigger('policy-file', 'change');
+assert.equal(elements['profile-diff'].disabled, false);
+assert.equal(elements['sample-profile-diff'].disabled, false);
+await trigger('sample-profile-diff');
+assert.match(elements.status.textContent, /体积比较完成/);
+let finishSizePolicy;
+elements['policy-file'].files = [{ name: 'slow.json', size: 2, text: () => new Promise(resolve => { finishSizePolicy = resolve; }) }];
+await trigger('policy-file', 'change');
+assert.equal(elements['profile-diff'].disabled, false);
+await selectSizeFiles();
+await trigger('profile-diff');
+assert.match(elements.status.textContent, /体积比较完成/);
+finishSizePolicy('{}');
+await new Promise(resolve => setImmediate(resolve));
+assert.match(elements.status.textContent, /体积比较完成/);
+await trigger('policy-reset');
+assert.equal(blobs.size, 0);
+
+// Bad, oversized and unreadable inputs on either side clear success artifacts.
+for (const id of ['before', 'after']) {
+  for (const file of [
+    { size: 1, text: async () => '{' },
+    { size: 10485761, text: async () => { throw Error('must not read'); } },
+    { size: 1, text: async () => { throw Error('size read failed'); } },
+  ]) {
+    await selectSizeFiles();
+    await trigger('profile-diff');
+    elements[id].files = [file];
+    await trigger('profile-diff');
+    assert.match(elements.status.textContent, /分析失败/);
+    assert.equal(elements.json.attributes['aria-disabled'], 'true');
+    assert.equal(elements.report.hidden, true);
+    assert.equal(blobs.size, 0);
+  }
+}
+// Late second-file reads and cancelled Worker callbacks cannot replace the next result.
+let finishSizeRead;
+await selectSizeFiles();
+elements.after.files = [{ size: 1, text: () => new Promise(resolve => { finishSizeRead = resolve; }) }];
+await trigger('profile-diff');
+await trigger('sample-profile');
+const latestSingleUrl = elements.json.href;
+finishSizeRead(sizeAfter);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(elements.json.href, latestSingleUrl);
+assert.match(elements.status.textContent, /体积分析完成/);
+await trigger('sample-review');
+const precedingWorker = workers.at(-1);
+await trigger('sample-profile-diff');
+const latestSizeUrl = elements.json.href;
+precedingWorker.onmessage({ data: { error: 'stale size error' } });
+assert.equal(elements.json.href, latestSizeUrl);
+assert.match(elements.status.textContent, /体积比较完成/);
+assert.ok(workers.every(worker => worker.dead));
+windowListeners.pagehide();
+assert.equal(blobs.size, 0);
+assert.equal(elements.report.hidden, true);
+console.log('Browser profile-diff UI: two files/demo isolation, growth/shrink/zero/ambiguity, full downloads, policy/filter independence, both-input errors, cancellation and cleanup passed');

@@ -104,3 +104,18 @@ pub fn nbinspect_profile(input : String) -> String {
   }
   result.stringify()
 }
+
+///|
+/// Compare two Notebook storage profiles locally; each input is at most 10 MiB.
+/// Publication policy and display filters do not affect size accounting.
+#export_name("nbinspect_profile_diff")
+pub fn nbinspect_profile_diff(before : String, after : String) -> String {
+  let result : Json = try {
+    let first = @nb.parse(before, max_bytes=10485760)
+    let second = @nb.parse(after, max_bytes=10485760)
+    @nb.profile_diff_report(first, second)
+  } catch {
+    @nb.Invalid(message) => { "error": message }
+  }
+  result.stringify()
+}
