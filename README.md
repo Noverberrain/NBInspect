@@ -8,6 +8,7 @@ NBInspect 是一个用 MoonBit 编写的 Jupyter Notebook 审阅工具。它比�
 - 依据单元格 ID、精确内容和有限相似度建立对应关系；对无法确定的匹配保留歧义，避免把插入导致的位置变化直接当作移动。
 - 比较代码和文字、输出、附件、执行记录、元数据以及扩展字段；可选择显示全部差异、仅代码或代码与文字。
 - 检查缺失或重复的单元格 ID、异常输出、执行计数、附件引用、输出大小以及缺失的内核或语言元数据。
+- 分析存储体积、比较版本增减，并用独立增长预算检查总体、输出和附件是否超额，适用于 CI。
 - 输出文本、JSON（`schema_version` 为 `1`）或可离线打开的 HTML 报告。浏览器演示也支持下载 JSON 和 HTML。
 
 ## 命令行快速开始
@@ -210,6 +211,36 @@ pwsh -NoProfile -File .\scripts\pr_review.ps1 `
 
 核心 `profile_diff_report(before, after, max_candidates?)` 在 native／JS 后端验证。CLI、离线报告与浏览器均支持版本体积比较；浏览器选择两份文件后点击“比较体积变化”，也可试用独立示例，并下载完整 JSON／HTML。浏览器每份输入上限为 10 MiB，统计口径、匹配证据及歧义处理与 CLI 一致。
 
+## 体积增长预算检查
+
+`budget` 在两份 Notebook 的体积比较上增加可配置的增长门槛，适用于 CI 中阻止输出或附件意外膨胀：
+
+```powershell
+& $bin budget .\before.ipynb .\after.ipynb --config .\configs\growth-budget.json
+& $bin budget .\before.ipynb .\after.ipynb --config .\configs\growth-budget.json --format html --output .\growth-report.html
+```
+
+独立预算配置示例（与发布规则配置分开）：
+
+```json
+{
+  "schema_version": 1,
+  "limits": {
+    "max_notebook_growth_bytes": 204800,
+    "max_output_growth_bytes": 102400,
+    "max_attachment_growth_bytes": 51200
+  }
+}
+```
+
+- 三项分别限制 Notebook 总体、完整代码输出数组、完整附件对象的**总字节增量**，测量口径仍为紧凑 JSON UTF-8。每项独立判断，输出增长不能用正文缩减抵消；总体预算包含元数据和外围结构。限制不是原文件大小、百分比或每个单元格的大小。
+- 仅检查显式配置的类别，至少配置一项。增长 **大于** 门槛才阻断，等于门槛、零变化、缩减通过；`0` 表示不允许正增长。值必须是 0–2,147,483,647 的整数，不接受字符串、小数、负数、未知字段或规则编号。配置上限 1 MiB，`schema_version` 缺省为 `1`。
+- 必须显式指定 `--config FILE`，不会自动加载预算；仅接受 `--config`、`--format` 和 `--output`。配置不能用于 `check`／`review` 的发布规则；本命令也不读取那些规则或 `fail_on`。示例额度可按项目修改，不是通用标准。
+- 通过返回 **0**，任一预算超限返回 **1**，配置、输入、资源／匹配限制或报告写入失败返回 **2**。超限时仍先生成完整报告；既有报告、两份输入及配置文件均不覆盖。
+- JSON `kind: "budget"`、`schema_version: 1`、`status: "passed" | "blocked"`，包含有效 `budget`、逐项 `checks`（前后大小、增长、额度、超额和结果）、`exceeded_count` 及完整 `comparison` 体积比较证据。文本／离线 HTML 展示同样的信息，不复制或执行 Notebook 正文。
+- 整体体积预算不依赖单元格身份判断；重复内容的匹配歧义仍保留在 `comparison.ambiguous_before`，预算通过不代表对应关系已确认，也不代表发布风险检查通过。
+- 沿用每份 50 MiB、10,000 个单元格、10,000 项资源、nbformat 4.0–4.5 和默认 1,000,000 次匹配候选预算。超限报错，不输出部分成功结果。核心 `parse_size_budget(input)` 与 `budget_report(before, after, budget, max_candidates?)` 支持 native／JS；本轮提供 CLI 和离线报告，浏览器尚未提供预算入口。
+
 ## 发布规则配置
 
 `check`、`review`、`batch` 和 `review-git` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
@@ -286,7 +317,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器、体积分析及体积变化比较集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器、体积分析、体积变化比较及增长预算集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 

@@ -10,6 +10,8 @@ pub fn batch_report(String, Array[Json], Array[Json], Array[Json], recursive? : 
 
 pub fn blocks(Array[Finding], fail_on? : String) -> Bool raise InputError
 
+pub fn budget_report(Notebook, Notebook, SizeBudget, max_candidates? : Int) -> Json raise InputError
+
 pub fn check(Notebook, max_cell_output? : Int, max_total_output? : Int, policy? : CheckPolicy, enabled? : Array[String]) -> Array[Finding] raise InputError
 
 pub fn check_report(Notebook, fail_on? : String, policy? : CheckPolicy) -> Json raise InputError
@@ -37,6 +39,8 @@ pub fn parse(String, max_bytes? : Int, max_cells? : Int) -> Notebook raise Input
 pub fn parse_git_changes(String, max_files? : Int) -> Array[GitChange] raise InputError
 
 pub fn parse_policy(String) -> CheckPolicy raise InputError
+
+pub fn parse_size_budget(String) -> SizeBudget raise InputError
 
 pub fn policy_json(CheckPolicy) -> Json
 
@@ -147,6 +151,10 @@ pub(all) struct RiskChange {
 pub(all) struct RiskReview {
   changes : Array[RiskChange]
   matches : MatchResult
+}
+
+pub struct SizeBudget {
+  limits : Map[String, Int]
 }
 
 // Type aliases

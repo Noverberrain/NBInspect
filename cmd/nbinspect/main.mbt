@@ -39,12 +39,13 @@ fn read(
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: profile-diff BEFORE AFTER [--format text|json|html] [--output FILE] | profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: budget BEFORE AFTER --config FILE [--format text|json|html] [--output FILE] | profile-diff BEFORE AFTER [--format text|json|html] [--output FILE] | profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
   let command = args[0]
-  if command != "profile-diff" &&
+  if command != "budget" &&
+    command != "profile-diff" &&
     command != "profile" &&
     command != "check" &&
     command != "diff" &&
@@ -52,7 +53,7 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     command != "batch" &&
     command != "review-git" {
     raise @nb.Invalid(
-      "expected profile-diff, profile, check, diff, review, batch or review-git",
+      "expected budget, profile-diff, profile, check, diff, review, batch or review-git",
     )
   }
   let positional : Array[String] = []
@@ -126,6 +127,13 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     ) {
     raise @nb.Invalid(command + " accepts only --format and --output")
   }
+  if command == "budget" &&
+    (explicit_view || explicit_fail_on || exit_diff || recursive || staged) {
+    raise @nb.Invalid("budget accepts only --config, --format and --output")
+  }
+  if command == "budget" && config == None {
+    raise @nb.Invalid("budget requires an explicit --config FILE")
+  }
   if staged && command != "review-git" {
     raise @nb.Invalid("staged is a review-git option")
   }
@@ -162,13 +170,28 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     positional.contains(path) {
     raise @nb.Invalid("report cannot overwrite an input file")
   }
-  let loaded = match config {
-    Some(path) =>
-      @nb.parse_policy(read(path, max_bytes=1048576)) catch {
+  let size_budget = if command == "budget" {
+    let path = config.unwrap()
+    Some(
+      @nb.parse_size_budget(read(path, max_bytes=1048576)) catch {
         @nb.Invalid(message) =>
-          raise @nb.Invalid("config " + path + ": " + message)
-      }
-    None => @nb.default_policy()
+          raise @nb.Invalid("budget config " + path + ": " + message)
+      },
+    )
+  } else {
+    None
+  }
+  let loaded = if command == "budget" {
+    @nb.default_policy()
+  } else {
+    match config {
+      Some(path) =>
+        @nb.parse_policy(read(path, max_bytes=1048576)) catch {
+          @nb.Invalid(message) =>
+            raise @nb.Invalid("config " + path + ": " + message)
+        }
+      None => @nb.default_policy()
+    }
   }
   let policy = if explicit_fail_on {
     loaded.with_fail_on(fail_on)
@@ -191,7 +214,9 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
       @nb.check_report(before, policy~)
     } else {
       let after = @nb.parse(read(positional[1]))
-      if command == "profile-diff" {
+      if command == "budget" {
+        @nb.budget_report(before, after, size_budget.unwrap())
+      } else if command == "profile-diff" {
         @nb.profile_diff_report(before, after)
       } else if command == "diff" {
         @nb.diff_report(before, after, view~)
@@ -221,7 +246,10 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     }
     None => println(content)
   }
-  if command == "check" || command == "batch" || command == "review-git" {
+  if command == "budget" ||
+    command == "check" ||
+    command == "batch" ||
+    command == "review-git" {
     match report {
       Object(o) =>
         match o.get("status") {

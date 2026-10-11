@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "max_notebook_growth_bytes": 204800,
+    "max_output_growth_bytes": 102400,
+    "max_attachment_growth_bytes": 51200
+  }
+}
