@@ -5,7 +5,8 @@ import * as core from '../web/nbinspect.js';
 
 const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff',
   'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html',
-  'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name'];
+  'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name',
+  'budget', 'sample-budget', 'budget-file', 'budget-reset', 'budget-status', 'budget-effective', 'budget-name'];
 const elements = Object.fromEntries(ids.map(id => [id, {
   files: [], value: 'all', hidden: false, disabled: false, attributes: {}, listeners: {},
   addEventListener(event, callback) { this.listeners[event] = callback; },
@@ -387,3 +388,149 @@ windowListeners.pagehide();
 assert.equal(blobs.size, 0);
 assert.equal(elements.report.hidden, true);
 console.log('Browser profile-diff UI: two files/demo isolation, growth/shrink/zero/ambiguity, full downloads, policy/filter independence, both-input errors, cancellation and cleanup passed');
+
+// Independent budget import and both pass/block results remain downloadable.
+await trigger('budget-reset');
+assert.equal(elements.budget.disabled, true);
+await trigger('budget');
+assert.match(elements.status.textContent, /请先导入有效/);
+const growthBudget = await readFile('configs/growth-budget.json', 'utf8');
+const importBudgetFile = async text => {
+  elements['budget-file'].files = [{ name: '<img>.json', size: Buffer.byteLength(text), text: async () => text }];
+  await trigger('budget-file', 'change');
+};
+await importBudgetFile(growthBudget);
+assert.equal(elements.budget.disabled, false);
+assert.equal(elements['budget-name'].textContent, '<img>.json');
+assert.deepEqual(JSON.parse(elements['budget-effective'].textContent), JSON.parse(growthBudget));
+await selectSizeFiles();
+await trigger('budget');
+assert.match(elements.status.textContent, /预算检查完成 · 通过/);
+assert.equal(elements.json.download, 'nbinspect-budget.json');
+assert.equal(elements.html.download, 'nbinspect-budget.html');
+const downloadedBudget = JSON.parse(await blobs.get(elements.json.href).text());
+assert.deepEqual(downloadedBudget, JSON.parse(core.nbinspect_budget(sizeBefore, sizeAfter, growthBudget)));
+assert.match(await blobs.get(elements.html.href).text(), /Effective size budget/);
+assert.equal(elements['risk-controls'].hidden, true);
+await trigger('sample-budget');
+assert.match(elements.status.textContent, /固定零增长额度.*未通过.*超额/);
+assert.equal(JSON.parse(await blobs.get(elements.json.href).text()).status, 'blocked');
+assert.equal(JSON.parse(elements['budget-effective'].textContent).limits.max_notebook_growth_bytes, 204800);
+await trigger('budget'); // Imported files/config survive a separate fixed demo.
+assert.match(elements.status.textContent, /预算检查完成 · 通过/);
+const zeroBudget = '{"limits":{"max_notebook_growth_bytes":0,"max_output_growth_bytes":0,"max_attachment_growth_bytes":0}}';
+await importBudgetFile(zeroBudget);
+assert.equal(blobs.size, 0);
+await trigger('budget');
+assert.match(elements.status.textContent, /未通过.*总体超额 251.*输出超额 133.*附件超额 57/);
+const blockedBudgetUrl = elements.json.href;
+elements.view.value = 'code';
+await trigger('view', 'change');
+await trigger('risk-status', 'change');
+assert.equal(elements.json.href, blockedBudgetUrl);
+await selectSizeFiles(sizeAfter, sizeBefore);
+await trigger('budget');
+assert.match(elements.status.textContent, /预算检查完成 · 通过/);
+
+// Invalid budget does not disable publication checks, profiles, or the explicit demo.
+await importBudgetFile('{');
+assert.equal(elements.budget.disabled, true);
+assert.match(elements['budget-status'].textContent, /预算无效/);
+assert.equal(blobs.size, 0);
+await trigger('sample-profile-diff');
+assert.match(elements.status.textContent, /体积比较完成/);
+await trigger('sample-review');
+assert.match(elements.status.textContent, /审阅完成/);
+await trigger('sample-budget');
+assert.match(elements.status.textContent, /固定零增长额度.*未通过/);
+elements.before.files = [];
+await importBudgetFile(growthBudget);
+await trigger('budget');
+assert.match(elements.status.textContent, /请选择原始/); // Real button must not reuse demo.
+await selectSizeFiles();
+elements.after.files = [];
+await trigger('budget');
+assert.match(elements.status.textContent, /请选择修改后/);
+for (const id of ['before', 'after']) {
+  for (const file of [
+    { size: 1, text: async () => '{' },
+    { size: 10485761, text: async () => { throw Error('must not read'); } },
+    { size: 1, text: async () => { throw Error('budget input read failed'); } },
+  ]) {
+    await selectSizeFiles();
+    elements[id].files = [file];
+    await trigger('budget');
+    assert.match(elements.status.textContent, /分析失败/);
+    assert.equal(blobs.size, 0);
+    assert.equal(elements.report.hidden, true);
+  }
+}
+for (const file of [
+  { name: 'huge.json', size: 1048577, text: async () => { throw Error('must not read'); } },
+  { name: 'unreadable.json', size: 1, text: async () => { throw Error('budget read failed'); } },
+]) {
+  elements['budget-file'].files = [file];
+  await trigger('budget-file', 'change');
+  assert.equal(elements.budget.disabled, true);
+  assert.match(elements['budget-status'].textContent, /预算无效/);
+}
+// Reset/new import fences a late read; publication-policy errors never affect budgets.
+let finishBudgetRead;
+elements['budget-file'].files = [{ name: 'slow.json', size: 2, text: () => new Promise(resolve => { finishBudgetRead = resolve; }) }];
+await trigger('budget-file', 'change');
+await trigger('budget-reset');
+finishBudgetRead(growthBudget);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(elements.budget.disabled, true);
+let finishOldBudget;
+elements['budget-file'].files = [{ name: 'old.json', size: 2, text: () => new Promise(resolve => { finishOldBudget = resolve; }) }];
+await trigger('budget-file', 'change');
+await importBudgetFile(zeroBudget);
+finishOldBudget(growthBudget);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(JSON.parse(elements['budget-effective'].textContent).limits.max_notebook_growth_bytes, 0);
+elements['policy-file'].files = [{ name: 'bad.json', size: 1, text: async () => '{' }];
+await trigger('policy-file', 'change');
+assert.equal(elements.budget.disabled, false);
+await selectSizeFiles();
+await trigger('budget');
+assert.match(elements.status.textContent, /预算检查完成.*未通过/);
+let finishBudgetPolicy;
+elements['policy-file'].files = [{ name: 'slow.json', size: 2, text: () => new Promise(resolve => { finishBudgetPolicy = resolve; }) }];
+await trigger('policy-file', 'change');
+await trigger('budget');
+assert.match(elements.status.textContent, /预算检查完成/);
+finishBudgetPolicy('{}');
+await new Promise(resolve => setImmediate(resolve));
+await trigger('policy-reset');
+assert.equal(elements.budget.disabled, false);
+let finishBudgetNotebook;
+elements.after.files = [{ size: 1, text: () => new Promise(resolve => { finishBudgetNotebook = resolve; }) }];
+await trigger('budget');
+await trigger('budget-reset');
+finishBudgetNotebook(sizeAfter);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(blobs.size, 0);
+assert.equal(elements.report.hidden, true);
+await trigger('sample-review');
+const priorBudgetWorker = workers.at(-1);
+await trigger('sample-budget');
+const freshBudgetUrl = elements.json.href;
+priorBudgetWorker.onmessage({ data: { error: 'stale budget callback' } });
+assert.equal(elements.json.href, freshBudgetUrl);
+windowListeners.pagehide();
+assert.equal(blobs.size, 0);
+assert.ok(workers.every(worker => worker.dead));
+// A late validation callback cannot re-enable a cleared or replaced budget.
+await importBudgetFile(growthBudget);
+const retiredBudgetWorker = workers.at(-1);
+await trigger('budget-reset');
+retiredBudgetWorker.onmessage({ data: { budget: JSON.parse(growthBudget) } });
+assert.equal(elements.budget.disabled, true);
+await importBudgetFile(zeroBudget);
+retiredBudgetWorker.onmessage({ data: { error: 'old validation failure' } });
+assert.match(elements['budget-status'].textContent, /预算已应用/);
+assert.equal(JSON.parse(elements['budget-effective'].textContent).limits.max_notebook_growth_bytes, 0);
+windowListeners.pagehide();
+assert.ok(workers.every(worker => worker.dead));
+console.log('Browser budget UI: import/clear, full blocked/passed downloads, demo isolation, independent policy/filter states, both-input errors, stale reads/callbacks and cleanup passed');

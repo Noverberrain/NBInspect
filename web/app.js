@@ -11,6 +11,11 @@ let policyLoading = false;
 let policyError = '';
 let policyVersion = 0;
 let policyWorker = null;
+let budgetText = '';
+let budgetVersion = 0;
+let budgetWorker = null;
+// Demo has explicit zero allowances and never substitutes an imported budget.
+const sampleBudget = JSON.stringify({ limits: { max_notebook_growth_bytes: 0, max_output_growth_bytes: 0, max_attachment_growth_bytes: 0 } });
 
 const cell = (id, source) => ({ id, cell_type: 'code', source, metadata: {}, execution_count: null, outputs: [] });
 const prose = (id, source) => ({ id, cell_type: 'markdown', source, metadata: {} });
@@ -80,17 +85,22 @@ async function readNotebook(id) {
 }
 
 async function analyze(mode) {
-  if (policyLoading && !['profile', 'profile-diff'].includes(mode)) return;
+  if (policyLoading && !['profile', 'profile-diff', 'budget'].includes(mode)) return;
   if (['check', 'review'].includes(mode) && policyError) {
     clearResult('规则配置无效，请重新导入或恢复默认规则。');
     return;
   }
+  if (mode === 'budget' && !sampleMode && !budgetText) {
+    clearResult('请先导入有效的增长预算 JSON 配置。');
+    return;
+  }
+  const selectedBudget = sampleMode ? sampleBudget : budgetText;
   clearResult('正在分析…');
   const ownRun = runId;
   lastMode = mode;
   try {
-    const before = sampleMode ? (['profile', 'profile-diff'].includes(mode) ? profileSample : mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
-    const after = ['check', 'profile'].includes(mode) ? '' : sampleMode ? (mode === 'profile-diff' ? profileDiffSampleAfter : mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
+    const before = sampleMode ? (['profile', 'profile-diff', 'budget'].includes(mode) ? profileSample : mode === 'review' ? riskBefore : sampleBefore) : await readNotebook('before');
+    const after = ['check', 'profile'].includes(mode) ? '' : sampleMode ? (['profile-diff', 'budget'].includes(mode) ? profileDiffSampleAfter : mode === 'review' ? riskAfter : sampleAfter) : await readNotebook('after');
     if (ownRun !== runId) return;
     const worker = new Worker('./worker.js', { type: 'module' });
     activeWorker = worker;
@@ -128,11 +138,11 @@ async function analyze(mode) {
         downloadUrls.push(url);
         const link = element(kind);
         link.href = url;
-        link.download = (['profile', 'profile-diff'].includes(data.report.kind) ? 'nbinspect-' + data.report.kind + '.' : 'nbinspect-report.') + kind;
+        link.download = (['profile', 'profile-diff', 'budget'].includes(data.report.kind) ? 'nbinspect-' + data.report.kind + '.' : 'nbinspect-report.') + kind;
         link.setAttribute('aria-disabled', 'false');
       }
     };
-    worker.postMessage({ mode, before, after, view: element('view').value, riskStatus: element('risk-status').value, policy: policyText });
+    worker.postMessage({ mode, before, after, view: element('view').value, riskStatus: element('risk-status').value, policy: policyText, budget: selectedBudget });
   } catch (error) {
     if (ownRun === runId) clearResult('分析失败：' + error.message);
   }
@@ -140,7 +150,11 @@ async function analyze(mode) {
 
 function showStatus() {
   const report = current.report;
-  if (report.kind === 'profile-diff') {
+  if (report.kind === 'budget') {
+    const labels = { notebook_bytes: '总体', output_bytes: '输出', attachment_bytes: '附件' };
+    const failures = report.checks.filter(row => row.status === 'blocked').map(row => labels[row.metric] + '超额 ' + row.excess_bytes.toLocaleString('zh-CN') + ' 字节');
+    element('status').textContent = (sampleMode ? '预算示例（固定零增长额度） · ' : '') + '预算检查完成 · ' + (report.status === 'blocked' ? '未通过 · ' + failures.join(' / ') : '通过 · 已配置的 ' + report.checks.length + ' 项均未超额') + ' · 仅检查体积，发布风险需另行审阅';
+  } else if (report.kind === 'profile-diff') {
     const s = report.summary.delta;
     const signed = value => (value > 0 ? '+' : '') + value.toLocaleString('zh-CN');
     element('status').textContent = '体积比较完成 · 紧凑 JSON 增减 ' + signed(s.notebook_bytes) + ' 字节 · 正文 ' + signed(s.source_bytes) + ' / 输出 ' + signed(s.output_bytes) + ' / 附件 ' + signed(s.attachment_bytes) + ' / 其他 ' + signed(s.other_bytes) + ' 字节 · 匹配 ' + report.matched_count + ' 对 / 未匹配 ' + report.unmatched_before_count + ' → ' + report.unmatched_after_count + ' · 旧单元格歧义 ' + report.ambiguous_before.length + ' 项' + (report.ambiguous_before.length ? '（需人工复核）' : '');
@@ -239,6 +253,65 @@ function resetPolicy() {
   clearResult('已恢复默认规则，点击操作重新分析。');
 }
 
+function clearBudget(clearFile = true) {
+  budgetVersion++;
+  budgetWorker?.terminate();
+  budgetWorker = null;
+  budgetText = '';
+  element('budget').disabled = true;
+  if (clearFile) element('budget-file').value = '';
+  element('budget-name').textContent = '未导入';
+  element('budget-effective').hidden = true;
+  element('budget-effective').textContent = '';
+  element('budget-status').textContent = '需显式导入增长预算；未配置的类别不检查，0 表示不允许正增长。';
+  clearResult('增长预算已清除，旧报告已清空。');
+}
+
+async function importBudget() {
+  const file = element('budget-file').files[0];
+  clearBudget(false);
+  const version = budgetVersion;
+  if (!file) return;
+  element('budget-name').textContent = file.name;
+  element('budget-status').textContent = '正在校验增长预算…';
+  const failed = message => {
+    element('budget-status').textContent = '预算无效：' + message + '。请重新导入。';
+  };
+  try {
+    if (file.size > 1024 * 1024) throw new Error('预算文件超过 1 MiB 限制');
+    const input = await file.text();
+    if (version !== budgetVersion) return;
+    const worker = new Worker('./worker.js', { type: 'module' });
+    budgetWorker = worker;
+    worker.onerror = event => {
+      if (version === budgetVersion) {
+        worker.terminate();
+        budgetWorker = null;
+        failed('浏览器未能加载 MoonBit 模块');
+      }
+      event.preventDefault();
+    };
+    worker.onmessage = ({ data }) => {
+      if (version !== budgetVersion) return;
+      worker.terminate();
+      budgetWorker = null;
+      if (data.error) { failed(data.error); return; }
+      budgetText = JSON.stringify(data.budget);
+      element('budget-effective').textContent = JSON.stringify(data.budget, null, 2);
+      element('budget-effective').hidden = false;
+      element('budget-status').textContent = '预算已应用 · ' + Object.keys(data.budget.limits).length + ' 项额度 · 恰好达到预算或缩减通过；与发布规则独立。';
+      element('budget').disabled = false;
+    };
+    worker.postMessage({ mode: 'budget-config', input });
+  } catch (error) {
+    if (version === budgetVersion) failed(error.message);
+  }
+}
+
+element('budget-file').addEventListener('change', importBudget);
+element('budget-reset').addEventListener('click', () => clearBudget());
+element('budget').addEventListener('click', () => { sampleMode = false; analyze('budget'); });
+element('sample-budget').addEventListener('click', () => { sampleMode = true; analyze('budget'); });
 element('policy-file').addEventListener('change', importPolicy);
 element('policy-reset').addEventListener('click', resetPolicy);
 element('check').addEventListener('click', () => analyze('check'));
@@ -253,7 +326,7 @@ element('sample').addEventListener('click', () => { sampleMode = true; analyze('
 for (const id of ['before', 'after']) {
   element(id).addEventListener('change', () => {
     sampleMode = false;
-    clearResult('文件已选择。点击“检查”“比较”“审阅发布风险”、“分析原始文件体积”或“比较体积变化”开始分析。');
+    clearResult('文件已选择。点击“检查”“比较”“审阅发布风险”、“分析原始文件体积”、“比较体积变化”或“检查增长预算”开始分析。');
   });
 }
 element('view').addEventListener('change', () => {
@@ -266,6 +339,9 @@ element('risk-status').addEventListener('change', () => {
   }
 });
 window.addEventListener('pagehide', () => {
+  budgetVersion++;
+  budgetWorker?.terminate();
+  budgetWorker = null;
   policyVersion++;
   policyWorker?.terminate();
   policyWorker = null;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { nbinspect_profile_diff, nbinspect_profile, nbinspect_analyze, nbinspect_render_report, nbinspect_review, nbinspect_render_review, nbinspect_analyze_with_policy, nbinspect_review_with_policy, nbinspect_parse_policy } from '../web/nbinspect.js';
+import { nbinspect_budget, nbinspect_parse_budget, nbinspect_profile_diff, nbinspect_profile, nbinspect_analyze, nbinspect_render_report, nbinspect_review, nbinspect_render_review, nbinspect_analyze_with_policy, nbinspect_review_with_policy, nbinspect_parse_policy } from '../web/nbinspect.js';
 
 const cell = (id, source) => ({ id, cell_type: 'code', source, metadata: {}, execution_count: null, outputs: [] });
 const notebook = cells => JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells });
@@ -249,6 +249,47 @@ for (const [first, second] of [['{', sizeAfter], [sizeBefore, '{']]) {
   assert.ok(posted.error);
 }
 console.log('Browser profile-diff: native parity in both directions, zero/negative changes, movement, ambiguous duplicates, both-input limits, matching budget, escaped HTML and Worker isolation passed');
+// Browser budgets use exactly the native allowances and complete comparison evidence.
+const importedBudget = await readFile('configs/growth-budget.json', 'utf8');
+const effectiveBudget = JSON.parse(nbinspect_parse_budget(importedBudget));
+assert.deepEqual(effectiveBudget, JSON.parse(importedBudget));
+const allowedBudget = JSON.parse(nbinspect_budget(sizeBefore, sizeAfter, importedBudget));
+const nativeBudget = spawnSync('_build/native/debug/build/cmd/nbinspect/nbinspect.exe', ['budget', 'examples/profile-before.ipynb', 'examples/profile-after.ipynb', '--config', 'configs/growth-budget.json', '--format', 'json'], { encoding: 'utf8' });
+assert.equal(nativeBudget.status, 0, nativeBudget.stderr);
+assert.deepEqual(allowedBudget, JSON.parse(nativeBudget.stdout));
+const noGrowth = '{"limits":{"max_notebook_growth_bytes":0,"max_output_growth_bytes":0,"max_attachment_growth_bytes":0}}';
+const deniedBudget = JSON.parse(nbinspect_budget(sizeBefore, sizeAfter, noGrowth));
+assert.equal(deniedBudget.status, 'blocked');
+assert.equal(deniedBudget.exceeded_count, 3);
+assert.deepEqual(deniedBudget.comparison, sizeReport);
+assert.equal(JSON.parse(nbinspect_budget(sizeAfter, sizeBefore, noGrowth)).status, 'passed');
+assert.equal(JSON.parse(nbinspect_budget(sizeBefore, sizeBefore, noGrowth)).status, 'passed');
+assert.deepEqual(JSON.parse(nbinspect_parse_budget('{"limits":{"max_output_growth_bytes":0}}')), { schema_version: 1, limits: { max_output_growth_bytes: 0 } });
+for (const input of ['', '{', '{}', '{"limits":{}}', '{"limits":{"max_output_growth_bytes":-1}}', '{"limits":{"max_output_growth_bytes":0.5}}', '{"limits":{"max_output_growth_bytes":2147483648}}', '{"rules":{}}', ' '.repeat(1048577), '😀'.repeat(262145)]) {
+  assert.ok(JSON.parse(nbinspect_parse_budget(input)).error);
+  assert.ok(JSON.parse(nbinspect_budget(sizeBefore, sizeAfter, input)).error);
+}
+for (const badInput of ['{', tooManyResources, ' '.repeat(10485761), '😀'.repeat(2621441)]) {
+  assert.ok(JSON.parse(nbinspect_budget(badInput, sizeAfter, noGrowth)).error);
+  assert.ok(JSON.parse(nbinspect_budget(sizeBefore, badInput, noGrowth)).error);
+}
+assert.match(JSON.parse(nbinspect_budget(budgetBefore, budgetAfter, noGrowth)).error, /candidate budget/);
+self.onmessage({ data: { mode: 'budget-config', input: importedBudget } });
+assert.deepEqual(posted.budget, effectiveBudget);
+self.onmessage({ data: { mode: 'budget-config', input: '{' } });
+assert.ok(posted.error);
+self.onmessage({ data: { mode: 'review', before: riskBefore, after: riskAfter, riskStatus: 'all' } });
+self.onmessage({ data: { mode: 'budget', before: sizeBefore, after: sizeAfter, budget: noGrowth, policy: '{', view: 'code', riskStatus: 'introduced' } });
+assert.deepEqual(posted.report, deniedBudget);
+assert.equal(posted.html, posted.displayHtml);
+assert.match(posted.html, /Growth allowance results/);
+self.onmessage({ data: { mode: 'render', riskStatus: 'introduced' } });
+assert.ok(posted.error);
+const escapedBudget = nbinspect_render_report(nbinspect_budget(profileInput, profileInput, noGrowth));
+assert.match(escapedBudget, /&lt;img&gt;/);
+assert.ok(!/<script|<img|<svg/i.test(escapedBudget));
+assert.ok(!escapedBudget.includes('hidden-payload'));
+console.log('Browser budget: native parity, normalized allowances, pass/block/shrink/zero, invalid/UTF-8/resource/budget limits, escaped HTML and independent Worker mode passed');
 delete globalThis.self;
 console.log('Browser policies: three templates match native CLI check/review, limits, disabled rules, strict validation and Worker protocol passed');
 console.log('Browser MoonBit bridge and Worker: check, diff, review, all risk filters, input limits, diagnostics, escaped HTML passed');

@@ -119,3 +119,32 @@ pub fn nbinspect_profile_diff(before : String, after : String) -> String {
   }
   result.stringify()
 }
+
+///|
+/// Validate a browser-imported growth budget, independently of publication policy.
+#export_name("nbinspect_parse_budget")
+pub fn nbinspect_parse_budget(input : String) -> String {
+  let result : Json = @nb.size_budget_json(@nb.parse_size_budget(input)) catch {
+    @nb.Invalid(message) => { "error": message }
+  }
+  result.stringify()
+}
+
+///|
+/// Compare two local Notebooks against explicit growth allowances.
+#export_name("nbinspect_budget")
+pub fn nbinspect_budget(
+  before : String,
+  after : String,
+  input : String,
+) -> String {
+  let result : Json = try {
+    let budget = @nb.parse_size_budget(input)
+    let first = @nb.parse(before, max_bytes=10485760)
+    let second = @nb.parse(after, max_bytes=10485760)
+    @nb.budget_report(first, second, budget)
+  } catch {
+    @nb.Invalid(message) => { "error": message }
+  }
+  result.stringify()
+}

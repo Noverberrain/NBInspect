@@ -93,7 +93,6 @@ pub fn budget_report(
   let comparison = profile_diff_report(before, after, max_candidates~)
   let summary = field(comparison, "summary")
   let checks : Array[Json] = []
-  let limits : Map[String, Json] = Map([])
   let mut exceeded = 0
   for (key, metric) in budget_metrics() {
     if budget.limits.get(key) is Some(limit) {
@@ -102,7 +101,6 @@ pub fn budget_report(
       if blocked {
         exceeded += 1
       }
-      limits[key] = Json::number(limit.to_double())
       checks.push({
         "limit": key,
         "metric": metric,
@@ -134,9 +132,21 @@ pub fn budget_report(
       "passed"
     },
     "measurement": "compact-json-utf8",
-    "budget": { "schema_version": 1, "limits": Json::object(limits) },
+    "budget": size_budget_json(budget),
     "exceeded_count": exceeded,
     "checks": checks,
     "comparison": comparison,
   }
+}
+
+///|
+/// Return the effective schema-v1 allowances; omitted metrics stay omitted.
+pub fn size_budget_json(budget : SizeBudget) -> Json {
+  let limits : Map[String, Json] = Map([])
+  for (key, _) in budget_metrics() {
+    if budget.limits.get(key) is Some(value) {
+      limits[key] = Json::number(value.to_double())
+    }
+  }
+  { "schema_version": 1, "limits": Json::object(limits) }
 }

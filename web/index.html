@@ -48,9 +48,18 @@
         <p id="policy-status" role="status" aria-live="polite">默认规则 · error 阻断 · 导入 JSON 可调整严重等级、启用规则及输出大小阈值。</p>
         <pre id="policy-effective" aria-label="有效发布规则" hidden></pre>
       </details>
+      <details class="policy-panel" id="budget-panel">
+        <summary>体积增长预算 <span id="budget-name">未导入</span></summary>
+        <div class="policy-controls">
+          <label for="budget-file">导入独立预算 JSON<input id="budget-file" type="file" accept=".json,application/json" aria-describedby="budget-status"></label>
+          <button id="budget-reset" class="outline" type="button">清除预算</button>
+        </div>
+        <p id="budget-status" role="status" aria-live="polite">需显式导入增长预算；未配置的类别不检查，0 表示不允许正增长。</p>
+        <pre id="budget-effective" aria-label="有效增长预算" hidden></pre>
+      </details>
       <div class="toolbar">
         <div class="filter"><label for="view">差异显示范围</label><select id="view"><option value="all">全部差异</option><option value="code">仅代码</option><option value="content">代码与文字</option></select></div>
-        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="review" type="button">审阅发布风险 <span aria-hidden="true">↗</span></button><button id="profile" type="button">分析原始文件体积 <span aria-hidden="true">↗</span></button><button id="profile-diff" type="button">比较体积变化 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用差异示例</button><button id="sample-review" type="button" class="outline">试用风险示例</button><button id="sample-profile" type="button" class="outline">试用体积示例</button><button id="sample-profile-diff" type="button" class="outline">试用体积变化示例</button></div>
+        <div class="actions"><button id="check" type="button">检查原始文件 <span aria-hidden="true">↗</span></button><button id="compare" type="button">比较两个文件 <span aria-hidden="true">↗</span></button><button id="review" type="button">审阅发布风险 <span aria-hidden="true">↗</span></button><button id="profile" type="button">分析原始文件体积 <span aria-hidden="true">↗</span></button><button id="profile-diff" type="button">比较体积变化 <span aria-hidden="true">↗</span></button><button id="budget" type="button" disabled>检查增长预算 <span aria-hidden="true">↗</span></button><button id="sample" type="button" class="outline">试用差异示例</button><button id="sample-review" type="button" class="outline">试用风险示例</button><button id="sample-profile" type="button" class="outline">试用体积示例</button><button id="sample-profile-diff" type="button" class="outline">试用体积变化示例</button><button id="sample-budget" type="button" class="outline">试用预算超额示例</button></div>
       </div>
     </section>
 

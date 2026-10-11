@@ -1,8 +1,14 @@
-import { nbinspect_profile_diff, nbinspect_profile, nbinspect_analyze_with_policy, nbinspect_parse_policy, nbinspect_render_report, nbinspect_review_with_policy, nbinspect_render_review } from './nbinspect.js';
+import { nbinspect_budget, nbinspect_parse_budget, nbinspect_profile_diff, nbinspect_profile, nbinspect_analyze_with_policy, nbinspect_parse_policy, nbinspect_render_report, nbinspect_review_with_policy, nbinspect_render_review } from './nbinspect.js';
 
 let report = null;
 self.onmessage = ({ data }) => {
   try {
+    if (data.mode === 'budget-config') {
+      const budget = JSON.parse(nbinspect_parse_budget(data.input));
+      if (budget.error) throw new Error(budget.error);
+      self.postMessage({ budget });
+      return;
+    }
     if (data.mode === 'policy') {
       const policy = JSON.parse(nbinspect_parse_policy(data.input));
       if (policy.error) throw new Error(policy.error);
@@ -14,7 +20,9 @@ self.onmessage = ({ data }) => {
       self.postMessage({ filtered: true, riskStatus: data.riskStatus, displayHtml: nbinspect_render_review(JSON.stringify(report), data.riskStatus) });
       return;
     }
-    report = JSON.parse(data.mode === 'profile-diff'
+    report = JSON.parse(data.mode === 'budget'
+      ? nbinspect_budget(data.before, data.after, data.budget)
+      : data.mode === 'profile-diff'
       ? nbinspect_profile_diff(data.before, data.after)
       : data.mode === 'profile'
       ? nbinspect_profile(data.before)

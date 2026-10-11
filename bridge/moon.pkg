@@ -21,6 +21,8 @@ options(
         "nbinspect_parse_policy",
         "nbinspect_profile",
         "nbinspect_profile_diff",
+        "nbinspect_parse_budget",
+        "nbinspect_budget",
       ],
     },
   },
