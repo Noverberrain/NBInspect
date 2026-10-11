@@ -39,19 +39,20 @@ fn read(
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: profile-diff BEFORE AFTER [--format text|json|html] [--output FILE] | profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
   let command = args[0]
-  if command != "profile" &&
+  if command != "profile-diff" &&
+    command != "profile" &&
     command != "check" &&
     command != "diff" &&
     command != "review" &&
     command != "batch" &&
     command != "review-git" {
     raise @nb.Invalid(
-      "expected profile, check, diff, review, batch or review-git",
+      "expected profile-diff, profile, check, diff, review, batch or review-git",
     )
   }
   let positional : Array[String] = []
@@ -114,7 +115,7 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   if !["error", "warning", "info"].contains(fail_on) {
     raise @nb.Invalid("unknown fail-on")
   }
-  if command == "profile" &&
+  if (command == "profile" || command == "profile-diff") &&
     (
       explicit_view ||
       explicit_fail_on ||
@@ -123,7 +124,7 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
       recursive ||
       staged
     ) {
-    raise @nb.Invalid("profile accepts only --format and --output")
+    raise @nb.Invalid(command + " accepts only --format and --output")
   }
   if staged && command != "review-git" {
     raise @nb.Invalid("staged is a review-git option")
@@ -190,7 +191,9 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
       @nb.check_report(before, policy~)
     } else {
       let after = @nb.parse(read(positional[1]))
-      if command == "diff" {
+      if command == "profile-diff" {
+        @nb.profile_diff_report(before, after)
+      } else if command == "diff" {
         @nb.diff_report(before, after, view~)
       } else {
         @nb.review_report(before, after, policy~)

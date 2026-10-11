@@ -197,13 +197,17 @@ pub fn html_report(report : Json, risk_status? : String = "all") -> String {
     )
   }
   b.write_string(
-    if field(report, "kind") == Json::string("profile") {
+    if [Json::string("profile"), Json::string("profile-diff")].contains(
+        field(report, "kind"),
+      ) {
       "</header><nav><a href='#content'>Size profile</a></nav><div id='content'>"
     } else {
       "</header><nav><a href='#content'>Changes</a><a href='#evidence'>Evidence</a></nav><div id='content'>"
     },
   )
-  if field(report, "kind") == Json::string("profile") {
+  if field(report, "kind") == Json::string("profile-diff") {
+    profile_diff_html(b, report)
+  } else if field(report, "kind") == Json::string("profile") {
     profile_html(b, report)
   } else if field(report, "kind") == Json::string("git-review") {
     git_review_html(b, report)

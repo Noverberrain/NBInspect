@@ -22,7 +22,9 @@ pub fn text_report(report : Json) -> String {
       "Effective policy: " + field(report, "policy").stringify() + "\n",
     )
   }
-  if kind == "profile" {
+  if kind == "profile-diff" {
+    profile_diff_text(b, report)
+  } else if kind == "profile" {
     profile_text(b, report)
   } else if kind == "git-review" {
     b.write_string(git_review_text(report))

@@ -188,6 +188,28 @@ pwsh -NoProfile -File .\scripts\pr_review.ps1 `
 
 核心 API 为 `profile_report(parse(input))`，同时支持 native 与 JS。浏览器演示可对原始文件运行体积分析，也提供独立体积示例与完整 JSON／HTML 下载；浏览器输入上限为 10 MiB，统计口径与 CLI 一致。
 
+## 比较两个版本的体积
+
+`profile-diff` 在现有单元格匹配基础上比较两份 Notebook 的存储体积：
+
+```powershell
+& $bin profile-diff .\before.ipynb .\after.ipynb
+& $bin profile-diff .\before.ipynb .\after.ipynb --format json
+& $bin profile-diff .\examples\profile-before.ipynb .\examples\profile-after.ipynb --format html --output .\size-changes.html
+```
+
+示例为手工编写的存储样本，展示输出增加、附件变大、调试输出清除、单元格移动和 Notebook 元数据变化，不代表实际执行结果。
+
+- 所有增减为 **after − before**，正数表示增长，负数表示缩减；统计口径仍是紧凑 JSON 的 UTF-8 字节数，不是原文件大小、解码媒体大小或精确清理收益。
+- `summary.before`／`after`／`delta` 分别提供总体、正文、输出、附件及其他字节。单元格按增减绝对值降序排列，相同幅度时增长在前，再按修改前／后数字索引排序；零增减项也保留。每项记录前后 ID、位置、分类体积、匹配依据、分数及移动标记。
+- 匹配依次使用唯一 ID、精确文本和有限相似度。未匹配项标记 `unmatched_before`／`unmatched_after`，按单侧负／正贡献计入总量；这**不是新增／删除的身份判定**。`ambiguous_before` 保留旧单元格的歧义索引，需人工复核；不能强行把重复内容配成一对。
+- `container_delta_bytes` 包含 Notebook 级元数据、扩展字段及外围 JSON 结构的变化。所有单元格 `delta_bytes` 加上该字段等于 Notebook 总增减。MIME 表取前后类型的并集，提供存储值字节数和数量的增减；它不包含外围键，不与输出／附件总量直接相加。
+- JSON 使用 `schema_version: 1`、`kind: "profile-diff"`、`measurement: "compact-json-utf8"`。同体积不代表内容相同；本命令不代替 `diff` 或发布风险审阅，不判断增长是否应该阻断。
+- 成功返回 `0`（包括增长、缩减和保留歧义）；输入、未支持格式、匹配预算、资源上限、参数或报告写入失败返回 `2`。仅接受 `--format` 与 `--output`，不覆盖输入或已有文件。
+- 每份输入沿用 50 MiB、10,000 个单元格、10,000 项资源及 nbformat 4.0–4.5 限制；复用默认 1,000,000 次匹配候选预算和相似度文本限制，超限报错，不输出截断的成功报告。
+
+核心 `profile_diff_report(before, after, max_candidates?)` 在 native／JS 后端验证。本轮提供 CLI 和离线报告，浏览器暂时仍是单文件体积分析，未新增版本体积比较按钮。
+
 ## 发布规则配置
 
 `check`、`review`、`batch` 和 `review-git` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
@@ -264,7 +286,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器及体积分析集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器、体积分析及体积变化比较集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 
