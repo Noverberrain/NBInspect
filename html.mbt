@@ -213,7 +213,9 @@ pub fn html_report(report : Json, risk_status? : String = "all") -> String {
     profile_diff_html(b, report)
   } else if field(report, "kind") == Json::string("profile") {
     profile_html(b, report)
-  } else if field(report, "kind") == Json::string("git-review") {
+  } else if [Json::string("git-review"), Json::string("git-budget")].contains(
+      field(report, "kind"),
+    ) {
     git_review_html(b, report)
   } else if field(report, "kind") == Json::string("batch") {
     batch_html(b, report)

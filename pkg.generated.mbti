@@ -10,6 +10,8 @@ pub fn batch_report(String, Array[Json], Array[Json], Array[Json], recursive? : 
 
 pub fn blocks(Array[Finding], fail_on? : String) -> Bool raise InputError
 
+pub fn budget_added_report(Notebook, SizeBudget) -> Json raise InputError
+
 pub fn budget_report(Notebook, Notebook, SizeBudget, max_candidates? : Int) -> Json raise InputError
 
 pub fn check(Notebook, max_cell_output? : Int, max_total_output? : Int, policy? : CheckPolicy, enabled? : Array[String]) -> Array[Finding] raise InputError
@@ -21,6 +23,8 @@ pub fn default_policy() -> CheckPolicy
 pub fn diff(Notebook, Notebook, max_text_work? : Int) -> NotebookDiff raise InputError
 
 pub fn diff_report(Notebook, Notebook, view? : String) -> Json raise InputError
+
+pub fn git_budget_report(String, String, String, String, Array[Json], SizeBudget, staged? : Bool) -> Json
 
 pub fn git_review_error(GitChange, String) -> Json
 

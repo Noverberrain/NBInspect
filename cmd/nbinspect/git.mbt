@@ -145,3 +145,70 @@ fn review_git_files(
   }
   files
 }
+
+///|
+fn budget_git(
+  base : String,
+  head : String,
+  budget : @nb.SizeBudget,
+  staged : Bool,
+) -> Json raise @nb.InputError {
+  let base_commit = if staged { git_index_base() } else { git_commit(base) }
+  let head_commit = if staged { "" } else { git_commit(head) }
+  let changes = @nb.parse_git_changes(
+    git_read(if staged { 3 } else { 1 }, base_commit, head_commit, 16777216),
+  )
+  if staged && git_index_base() != base_commit {
+    raise @nb.Invalid(
+      "HEAD changed while reading the Git index; retry the budget check",
+    )
+  }
+  let files : Array[Json] = []
+  for change in changes {
+    if change.kind == "deleted" {
+      files.push(@nb.git_review_file(change, { "status": "deleted" }))
+      continue
+    }
+    let report = try {
+      if !["100644", "100755"].contains(change.new_mode) ||
+        (
+          change.kind != "added" &&
+          !["100644", "100755"].contains(change.old_mode)
+        ) {
+        raise @nb.Invalid(
+          "Notebook Git entry is not a regular file; links and submodules are not followed",
+        )
+      }
+      let after = @nb.parse(git_read(2, change.after_blob, "", 52428800))
+      if change.kind == "added" {
+        @nb.budget_added_report(after, budget)
+      } else {
+        let before = @nb.parse(git_read(2, change.before_blob, "", 52428800))
+        @nb.budget_report(before, after, budget)
+      }
+    } catch {
+      @nb.Invalid(message) => {
+        files.push(@nb.git_review_error(change, message))
+        continue
+      }
+    }
+    files.push(@nb.git_review_file(change, report))
+  }
+  @nb.git_budget_report(
+    if staged {
+      "HEAD"
+    } else {
+      base
+    },
+    if staged {
+      "INDEX"
+    } else {
+      head
+    },
+    base_commit,
+    head_commit,
+    files,
+    budget,
+    staged~,
+  )
+}

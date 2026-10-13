@@ -22,7 +22,14 @@ pub fn text_report(report : Json) -> String {
       "Effective policy: " + field(report, "policy").stringify() + "\n",
     )
   }
-  if kind == "budget" {
+  if kind == "git-budget" {
+    b.write_string(
+      "Per changed Notebook; deletions do not offset growth.\nEffective size budget: " +
+      field(report, "budget").stringify() +
+      "\n",
+    )
+    b.write_string(git_review_text(report))
+  } else if kind == "budget" {
     budget_text(b, report)
   } else if kind == "profile-diff" {
     profile_diff_text(b, report)

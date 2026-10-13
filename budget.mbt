@@ -78,6 +78,15 @@ pub fn budget_report(
   budget : SizeBudget,
   max_candidates? : Int = 1000000,
 ) -> Json raise InputError {
+  let comparison = profile_diff_report(before, after, max_candidates~)
+  budget_evaluate(comparison, budget)
+}
+
+///|
+fn budget_evaluate(
+  comparison : Json,
+  budget : SizeBudget,
+) -> Json raise InputError {
   let known : Array[String] = []
   for (key, _) in budget_metrics() {
     known.push(key)
@@ -90,7 +99,6 @@ pub fn budget_report(
       raise Invalid("invalid size budget allowance: " + key)
     }
   }
-  let comparison = profile_diff_report(before, after, max_candidates~)
   let summary = field(comparison, "summary")
   let checks : Array[Json] = []
   let mut exceeded = 0

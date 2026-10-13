@@ -241,6 +241,27 @@ pwsh -NoProfile -File .\scripts\pr_review.ps1 `
 - 整体体积预算不依赖单元格身份判断；重复内容的匹配歧义仍保留在 `comparison.ambiguous_before`，预算通过不代表对应关系已确认，也不代表发布风险检查通过。
 - 沿用每份 50 MiB、10,000 个单元格、10,000 项资源、nbformat 4.0–4.5 和默认 1,000,000 次匹配候选预算。超限报错，不输出部分成功结果。核心 `parse_size_budget(input)` 与 `budget_report(before, after, budget, max_candidates?)` 支持 native／JS；CLI、离线报告和浏览器均支持预算检查。浏览器需在“体积增长预算”导入独立配置，选择两份文件后点击“检查增长预算”；每份输入上限为 10 MiB，支持通过和超额报告完整下载。
 
+## Git 版本／暂存区体积预算
+
+`budget-git` 将同一份增长预算应用于每个变更 Notebook，直接读取提交或暂存的 Git Blob：
+
+```powershell
+# 在目标 Notebook 仓库中运行，$bin 指向已构建的 NBInspect 可执行文件
+& $bin budget-git HEAD~1 HEAD --config .\growth-budget.json --format json
+& $bin budget-git --staged --config .\growth-budget.json
+& $bin budget-git --staged --config .\growth-budget.json --format html --output .\staged-budget.html
+```
+
+- 必须显式传入独立增长预算 `--config`；额度**按每个变更 Notebook 分别应用**，不是整个仓库的总量预算。其他文件缩减或删除不抵消某个文件的超额。
+- 修改／Git 识别的改名比较前后保存内容；单纯改名且内容不变时增长为零。新增 Notebook 从**缺席版本的零字节**开始计量，包含新增文件全部紧凑 JSON 容器字节，不能用序列化空 Notebook 冒充零基线。删除或移出 `.ipynb` 范围只记录 `deleted`，不解析旧内容，也不计负增长额度。
+- 提交模式固定解析后的两个实际提交号，忽略工作区与暂存改动；`--staged` 比较 HEAD 与实际索引，首次提交从空树开始。部分暂存、Git 提供的临时索引均按实际 Blob 分析，不读取后续工作区内容。从子目录运行仍检查整个仓库。
+- 参数仅接受 `--config`、`--format`、`--output` 及 `--staged`；暂存模式不接受两个提交参数，不能混用差异筛选或严重等级。预算配置显式读取指定磁盘文件，不读取配置的暂存版本。目标报告必须不存在，不覆盖现有报告、工作区文件或预算配置。
+- 没有变更 Notebook、仅删除、所有额度未超限返回 `0`；任一文件超额返回 `1`；逐文件读取／格式／资源错误使报告成为 `incomplete`，保留其他文件结果并返回 `2`，优先于超额判断。无效引用、配置、清单或任意未解决的索引冲突直接在 stderr 报错，不生成成功报告。
+- JSON `kind: "git-budget"`、`schema_version: 1`、`scope: "per-changed-notebook"`，记录有效 `budget`、`source`、前后提交或 Blob ID、逐文件状态和嵌套完整预算证据。首次提交 `base_commit` 为 `null`，暂存来源 `head_commit` 为 `null`；新增比较标记 `comparison.before_absent: true`，不虚构历史单元格身份。文本和离线 HTML 同样展示来源、超额、错误和证据。
+- 沿用 Git 清单 16 MiB、最多 1,000 个变更 Notebook、每个 Blob 50 MiB、Git 子进程 30 秒超时、格式／单元格／资源／匹配限制。链接、子模块不跟随，不执行外部 diff、textconv 或 Notebook，不自动拉取缺失对象；LFS 指针仍按保存内容解析，不读取 LFS 实体。改名依赖 Git 识别，未识别时按删除＋新增计量。
+
+这项功能是 native CLI 入口；新增文件计量和预算汇总核心也在 JS 后端验证。本轮不修改现有提交前 hook 或 Notebook PR 模板，接入这些流程需后续显式配置。
+
 ## 发布规则配置
 
 `check`、`review`、`batch` 和 `review-git` 支持 `--config FILE`。配置只显式读取指定文件；缺省字段沿用原有规则，不自动搜索配置文件。`diff` 不接受该选项。
@@ -317,7 +338,7 @@ pwsh -NoProfile -File ./scripts/ci_runner_test.ps1
 pwsh -NoProfile -File ./scripts/ci.ps1
 ```
 
-第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器、体积分析、体积变化比较及增长预算集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
+第一个脚本模拟格式和编译检查失败，验证退出码、错误日志及后续阶段停止；第二个脚本依次执行格式检查，native／JS 的严格检查、核心测试和接口生成检查，native 构建，CLI、批量、策略、Git 版本、暂存区审阅、hook 真实提交、PR 报告运行器、体积分析、体积变化比较、增长预算及 Git 预算集成测试，浏览器模块构建，以及浏览器核心与界面测试。任一阶段失败会立即停止并返回非零退出码；逐阶段日志及摘要保存在 `_build/ci-logs/<运行编号>/`。也可以用 `-LogDirectory` 指定日志目录。接口检查会运行 `moon info`，发现已跟踪接口文件与生成结果不一致时需要更新并提交接口文件。
 
 [CI 工作流](.github/workflows/ci.yml) 在推送到 `main`、提交 Pull Request 或手动触发时运行。当前使用 `windows-2022`、PowerShell 7、Node.js 24；MoonBit 编译器和 core 固定为 `0.10.14+7d59c7ec9`，从[官方发行地址](https://www.moonbitlang.com/download/)下载并校验固定 SHA-256。升级时须同步更新版本与两份归档摘要，并重新验证格式、接口和测试。GitHub Actions 本身也固定到完整提交号。
 

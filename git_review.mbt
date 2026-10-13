@@ -307,12 +307,25 @@ fn git_review_text(report : Json) -> String {
 ///|
 fn git_review_html(b : StringBuilder, report : Json) -> Unit {
   b.write_string(
-    "<section><h2>Git review</h2><p>" +
+    "<section><h2>" +
+    (if field(report, "kind") == Json::string("git-budget") {
+      "Git growth budget"
+    } else {
+      "Git review"
+    }) +
+    "</h2><p>" +
     escape_html(git_review_origin(report)) +
     "</p><pre>" +
     escape_html(preview(field(report, "summary"))) +
-    "</pre><nav>",
+    "</pre>",
   )
+  if field(report, "kind") == Json::string("git-budget") {
+    b.write_string(
+      "<p>Each changed Notebook is checked independently. Deletions and other files cannot offset its growth. Added Notebooks start at zero bytes.</p>",
+    )
+    html_section(b, "Effective size budget", field(report, "budget"))
+  }
+  b.write_string("<nav>")
   if field(report, "files") is Array(files) {
     for i, file in files {
       b.write_string(
@@ -350,6 +363,8 @@ fn git_review_html(b : StringBuilder, report : Json) -> Unit {
         b.write_string(
           "<p>Removed from notebook scope; old content is not checked.</p>",
         )
+      } else if field(nested, "kind") == Json::string("budget") {
+        budget_html(b, nested)
       } else if field(nested, "kind") == Json::string("review") {
         let risks = match field(nested, "changes") {
           Array(a) => a

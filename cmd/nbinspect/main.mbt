@@ -39,12 +39,13 @@ fn read(
 fn run(args : Array[String]) -> Int raise @nb.InputError {
   if args.length() == 0 || args[0] == "--help" {
     println(
-      "NBInspect: budget BEFORE AFTER --config FILE [--format text|json|html] [--output FILE] | profile-diff BEFORE AFTER [--format text|json|html] [--output FILE] | profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
+      "NBInspect: budget-git BASE HEAD --config FILE | budget-git --staged --config FILE [--format text|json|html] [--output FILE] | budget BEFORE AFTER --config FILE [--format text|json|html] [--output FILE] | profile-diff BEFORE AFTER [--format text|json|html] [--output FILE] | profile FILE [--format text|json|html] [--output FILE] | review-git BASE HEAD | review-git --staged | check/review/batch/review-git support --config FILE; batch DIR [--recursive] [--format text|json|html] [--output FILE] [--fail-on error|warning|info] | check FILE | diff BEFORE AFTER [--format json|text|html] [--output FILE] [--view all|code|content] [--exit-code] | review BEFORE AFTER [--format json|text|html] [--output FILE] [--fail-on error|warning|info]",
     )
     return 0
   }
   let command = args[0]
-  if command != "budget" &&
+  if command != "budget-git" &&
+    command != "budget" &&
     command != "profile-diff" &&
     command != "profile" &&
     command != "check" &&
@@ -53,7 +54,7 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     command != "batch" &&
     command != "review-git" {
     raise @nb.Invalid(
-      "expected budget, profile-diff, profile, check, diff, review, batch or review-git",
+      "expected budget-git, budget, profile-diff, profile, check, diff, review, batch or review-git",
     )
   }
   let positional : Array[String] = []
@@ -131,11 +132,17 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     (explicit_view || explicit_fail_on || exit_diff || recursive || staged) {
     raise @nb.Invalid("budget accepts only --config, --format and --output")
   }
-  if command == "budget" && config == None {
-    raise @nb.Invalid("budget requires an explicit --config FILE")
+  if command == "budget-git" &&
+    (explicit_view || explicit_fail_on || exit_diff || recursive) {
+    raise @nb.Invalid(
+      "budget-git accepts only --staged, --config, --format and --output",
+    )
   }
-  if staged && command != "review-git" {
-    raise @nb.Invalid("staged is a review-git option")
+  if (command == "budget" || command == "budget-git") && config == None {
+    raise @nb.Invalid(command + " requires an explicit --config FILE")
+  }
+  if staged && command != "review-git" && command != "budget-git" {
+    raise @nb.Invalid("staged is a review-git option or budget-git option")
   }
   if positional.length() !=
     (if staged {
@@ -166,11 +173,12 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     raise @nb.Invalid("recursive is a batch option")
   }
   if command != "review-git" &&
+    command != "budget-git" &&
     output is Some(path) &&
     positional.contains(path) {
     raise @nb.Invalid("report cannot overwrite an input file")
   }
-  let size_budget = if command == "budget" {
+  let size_budget = if command == "budget" || command == "budget-git" {
     let path = config.unwrap()
     Some(
       @nb.parse_size_budget(read(path, max_bytes=1048576)) catch {
@@ -181,7 +189,7 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   } else {
     None
   }
-  let loaded = if command == "budget" {
+  let loaded = if command == "budget" || command == "budget-git" {
     @nb.default_policy()
   } else {
     match config {
@@ -198,7 +206,22 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
   } else {
     loaded
   }
-  let report : Json = if command == "review-git" {
+  let report : Json = if command == "budget-git" {
+    budget_git(
+      if staged {
+        ""
+      } else {
+        positional[0]
+      },
+      if staged {
+        ""
+      } else {
+        positional[1]
+      },
+      size_budget.unwrap(),
+      staged,
+    )
+  } else if command == "review-git" {
     if staged {
       review_staged(policy)
     } else {
@@ -246,7 +269,8 @@ fn run(args : Array[String]) -> Int raise @nb.InputError {
     }
     None => println(content)
   }
-  if command == "budget" ||
+  if command == "budget-git" ||
+    command == "budget" ||
     command == "check" ||
     command == "batch" ||
     command == "review-git" {
