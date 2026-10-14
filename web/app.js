@@ -1,4 +1,6 @@
+import { createAnnotations } from './annotations.js';
 const element = id => document.getElementById(id);
+const annotations = createAnnotations(element, document, Blob, URL);
 const inputLimit = 10 * 1024 * 1024;
 let activeWorker = null;
 let runId = 0;
@@ -58,6 +60,7 @@ profileAfter.cells[2].outputs[0].text += '新增示例输出\n'.repeat(400);
 const profileDiffSampleAfter = JSON.stringify(profileAfter);
 
 function clearResult(message) {
+  annotations.reset();
   runId++;
   activeWorker?.terminate();
   activeWorker = null;
@@ -125,6 +128,7 @@ async function analyze(mode) {
         activeWorker = null;
       }
       current = data;
+      annotations.start(data);
       element('risk-controls').hidden = data.report.kind !== 'review';
       element('risk-status').disabled = data.report.kind !== 'review';
       showStatus();

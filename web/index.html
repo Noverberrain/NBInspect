@@ -70,6 +70,21 @@
         <div class="filter"><label for="risk-status">风险状态</label><select id="risk-status" disabled><option value="all">全部风险</option><option value="introduced">新增风险</option><option value="existing">已有风险</option><option value="resolved">已消除风险</option><option value="uncertain">待确认风险</option></select></div>
         <p>待确认表示单元格对应关系不足，需人工复核。仅新增达到当前发布规则阻断级别的风险阻断；筛选只影响显示，下载始终包含完整报告。</p>
       </div>
+      <details id="notes-panel" class="policy-panel" hidden>
+        <summary>人工审阅标注 <span>独立于分析判定</span></summary>
+        <div class="annotation-fields">
+          <label for="note-item">全部风险项（不随筛选变化）<select id="note-item" disabled></select></label>
+          <label for="note-decision">人工决定<select id="note-decision" disabled><option value="needs-action">需处理</option><option value="confirmed">已确认</option><option value="accepted">允许保留</option></select></label>
+        </div>
+        <p id="note-context" class="annotation-context"></p>
+        <label class="annotation-reason" for="note-reason">理由／备注（最多 2000 字符，允许保留必填）<textarea id="note-reason" rows="3" maxlength="2000" disabled></textarea></label>
+        <div class="policy-controls">
+          <button id="note-save" type="button" disabled>保存标注</button><button id="note-remove" type="button" disabled>移除本项标注</button>
+          <div class="downloads"><a id="notes-json" class="outline" aria-disabled="true">导出标注 JSON</a><a id="notes-html" class="outline" aria-disabled="true">导出标注 HTML</a></div>
+        </div>
+        <p id="notes-status" role="status" aria-live="polite">标注仅保存在当前页面，导出后可保留记录。</p>
+        <p>保存后再切换风险项。文件、配置或分析操作变化会清空标注；导出包含完整报告与已保存标注，原始 JSON／HTML 下载和 CI 判定保持不变。</p>
+      </details>
       <div id="empty" class="empty" aria-hidden="true"><span class="empty-glyph">≋</span><p>你的分析结果会出现在这里</p><small>文件不会上传 · 不执行 Notebook 代码</small></div>
       <iframe id="report" title="NBInspect 分析报告" sandbox="" hidden></iframe>
     </section>

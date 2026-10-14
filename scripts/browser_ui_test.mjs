@@ -3,11 +3,13 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as core from '../web/nbinspect.js';
 
-const ids = ['before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff',
+const ids = ['notes-panel', 'note-item', 'note-decision', 'note-reason', 'note-save', 'note-remove', 'notes-status', 'note-context', 'notes-json', 'notes-html', 'before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff',
   'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html',
   'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name',
   'budget', 'sample-budget', 'budget-file', 'budget-reset', 'budget-status', 'budget-effective', 'budget-name'];
 const elements = Object.fromEntries(ids.map(id => [id, {
+  replaceChildren(...children) { this.children = children; },
+  appendChild(child) { this.children.push(child); },
   files: [], value: 'all', hidden: false, disabled: false, attributes: {}, listeners: {},
   addEventListener(event, callback) { this.listeners[event] = callback; },
   setAttribute(name, value) { this.attributes[name] = value; },
@@ -36,7 +38,7 @@ class Worker {
 let nextBlob = 0;
 const windowListeners = {};
 const context = {
-  document: { getElementById: id => elements[id] },
+  document: { createElement: () => ({}), getElementById: id => elements[id] },
   window: { addEventListener(event, callback) { windowListeners[event] = callback; } },
   Worker, Blob,
   URL: {
@@ -44,7 +46,8 @@ const context = {
     revokeObjectURL(url) { blobs.delete(url); },
   },
 };
-vm.runInNewContext(await readFile('web/app.js', 'utf8'), context);
+vm.runInNewContext((await readFile('web/annotations.js', 'utf8')).replace('export function', 'function'), context);
+vm.runInNewContext((await readFile('web/app.js', 'utf8')).replace(/^import .*;\r?\n/, ''), context);
 async function trigger(id, event = 'click') {
   elements[id].listeners[event]();
   await new Promise(resolve => setImmediate(resolve));
@@ -569,3 +572,104 @@ assert.ok(!JSON.parse(await blobs.get(elements.json.href).text()).findings.some(
 windowListeners.pagehide();
 assert.equal(blobs.size, 0);
 console.log('Browser stale output UI: real inputs, info/error policy, nine-rule display, visible evidence, risk filters and full downloads passed');
+await trigger('policy-reset');
+await trigger('sample-review');
+assert.equal(elements['notes-panel'].hidden, false);
+assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+const baselineUrl = elements.json.href;
+const baselineHtmlUrl = elements.html.href;
+const baseline = await blobs.get(baselineUrl).text();
+const baselineHtml = await blobs.get(baselineHtmlUrl).text();
+elements['note-decision'].value = 'accepted';
+elements['note-reason'].value = '   ';
+await trigger('note-save');
+assert.match(elements['notes-status'].textContent, /需要填写理由/);
+assert.equal(blobs.size, 2);
+for (const [decision, reason] of [['invalid', 'reason'], ['confirmed', 'x'.repeat(2001)]]) {
+  elements['note-decision'].value = decision;
+  elements['note-reason'].value = reason;
+  await trigger('note-save');
+  assert.match(elements['notes-status'].textContent, /未保存/);
+  assert.equal(blobs.size, 2);
+}
+const unsafe = '</main><script>alert("risk")</script>&\'\n原因';
+elements['note-decision'].value = 'accepted';
+elements['note-reason'].value = unsafe;
+await trigger('note-save');
+const firstNotesUrl = elements['notes-json'].href;
+let record = JSON.parse(await blobs.get(firstNotesUrl).text());
+assert.equal(record.kind, 'review-notes');
+assert.equal(record.schema_version, 1);
+assert.ok(!Number.isNaN(Date.parse(record.exported_at)));
+assert.deepEqual(record.report, JSON.parse(baseline));
+assert.deepEqual(record.notes, [{ change_index: 0, decision: 'accepted', reason: unsafe }]);
+let notesHtml = await blobs.get(elements['notes-html'].href).text();
+assert.ok(notesHtml.includes('human-review-notes'));
+assert.ok(notesHtml.includes('&lt;script&gt;'));
+assert.ok(!notesHtml.includes('<script>alert'));
+assert.ok(notesHtml.includes('Original status: ' + record.report.status));
+assert.equal(await blobs.get(baselineUrl).text(), baseline);
+assert.equal(await blobs.get(baselineHtmlUrl).text(), baselineHtml);
+elements['note-item'].value = '1';
+await trigger('note-item', 'change');
+assert.equal(elements['note-decision'].value, 'needs-action');
+assert.equal(elements['note-reason'].value, '');
+elements['note-decision'].value = 'confirmed';
+elements['note-reason'].value = '已核对';
+await trigger('note-save');
+assert.ok(!blobs.has(firstNotesUrl));
+record = JSON.parse(await blobs.get(elements['notes-json'].href).text());
+assert.deepEqual(record.notes.map(n => n.change_index), [0, 1]);
+const notesUrlBeforeFilter = elements['notes-json'].href;
+elements['risk-status'].value = 'resolved';
+await trigger('risk-status', 'change');
+assert.equal(elements['notes-json'].href, notesUrlBeforeFilter);
+elements['note-item'].value = '0';
+await trigger('note-item', 'change');
+assert.equal(elements['note-reason'].value, unsafe);
+await trigger('note-remove');
+record = JSON.parse(await blobs.get(elements['notes-json'].href).text());
+assert.deepEqual(record.notes.map(n => n.change_index), [1]);
+elements['note-item'].value = '1';
+await trigger('note-item', 'change');
+elements['note-decision'].value = 'needs-action';
+await trigger('note-save');
+record = JSON.parse(await blobs.get(elements['notes-json'].href).text());
+assert.equal(record.notes.length, 1);
+assert.equal(record.notes[0].decision, 'needs-action');
+await trigger('note-remove');
+assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+assert.equal(blobs.size, 2);
+elements['note-item'].value = '-1';
+await trigger('note-save');
+assert.equal(blobs.size, 2);
+elements['note-item'].value = '0';
+await trigger('note-save');
+assert.equal(blobs.size, 4);
+await trigger('before', 'change');
+assert.equal(elements['notes-panel'].hidden, true);
+assert.equal(blobs.size, 0);
+await trigger('sample-review');
+await trigger('note-save');
+await trigger('policy-reset');
+assert.equal(blobs.size, 0);
+await trigger('sample-review');
+await trigger('note-save');
+await trigger('sample');
+assert.equal(elements['notes-panel'].hidden, true);
+assert.equal(blobs.size, 2);
+await trigger('sample-review');
+await trigger('note-save');
+windowListeners.pagehide();
+assert.equal(blobs.size, 0);
+// Empty reviews have no editable notes and no annotation downloads.
+const emptyReview = JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: { kernelspec: { name: 'python3', display_name: 'Python 3', language: 'python' }, language_info: { name: 'python' } }, cells: [] });
+for (const id of ['before', 'after']) elements[id].files = [{ size: emptyReview.length, text: async () => emptyReview }];
+await trigger('before', 'change');
+await trigger('review');
+assert.equal(elements['notes-panel'].hidden, false);
+assert.equal(elements['note-save'].disabled, true);
+assert.match(elements['notes-status'].textContent, /没有风险项/);
+assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+windowListeners.pagehide();
+console.log('Browser review annotations: validation, snapshot, escaping, save/update/remove, filter stability, input/policy/operation/page cleanup and empty reports passed');

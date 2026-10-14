@@ -101,3 +101,9 @@ footer{flex-direction:column}
 .policy-panel p{color:var(--muted);line-height:1.8;overflow-wrap:anywhere}
 .policy-panel pre{max-height:260px;overflow:auto;background:var(--wash);padding:12px;font:12px/1.7 Consolas,monospace}
 .policy-panel summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.annotation-fields{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px}
+.annotation-fields label,.annotation-reason{display:grid;gap:8px;min-width:0}
+.annotation-fields select{width:100%;min-width:0}
+.annotation-context{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto}
+.annotation-reason textarea{width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--line);background:var(--wash);color:var(--ink);padding:12px;font:13px/1.7 Consolas,"Microsoft YaHei",monospace}
+@media(max-width:650px){.annotation-fields{grid-template-columns:1fr}#notes-panel .downloads{width:100%;flex-wrap:wrap}}
