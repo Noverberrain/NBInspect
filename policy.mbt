@@ -11,7 +11,8 @@ pub struct CheckPolicy {
 ///|
 fn policy_rules() -> Array[String] {
   [
-    "FMT001", "FMT002", "OUT001", "EXE001", "EXE002", "ATT001", "SIZE001", "META001",
+    "FMT001", "FMT002", "OUT001", "OUT002", "EXE001", "EXE002", "ATT001", "SIZE001",
+    "META001",
   ]
 }
 
@@ -23,6 +24,7 @@ pub fn default_policy() -> CheckPolicy {
       "FMT001": "error",
       "FMT002": "error",
       "OUT001": "warning",
+      "OUT002": "info",
       "EXE001": "warning",
       "EXE002": "info",
       "ATT001": "warning",

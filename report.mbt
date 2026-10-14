@@ -157,6 +157,11 @@ pub fn review_report(
   let policy = policy.with_fail_on(fail_on.unwrap_or(policy.fail_on))
   let review = review_risks(before, after, policy~)
   let changes = review.changes
+  let evidence = if policy.enabled.contains("OUT002") {
+    stale_output_evidence(before, after, review.matches)
+  } else {
+    Map([])
+  }
   let introduced = changes.filter(fn(change) { change.status == "introduced" })
   let blocking = introduced.map(fn(change) { change.after.unwrap() })
   {
@@ -181,7 +186,9 @@ pub fn review_report(
       .filter(fn(change) { change.status == "uncertain" })
       .length(),
     },
-    "changes": changes.map(risk_change_json),
+    "changes": changes.map(fn(change) {
+      stale_change_json(change, evidence, after.cells.length())
+    }),
     "matches": review.matches.pairs.map(match_json),
     "ambiguous_before": review.matches.ambiguous,
   }

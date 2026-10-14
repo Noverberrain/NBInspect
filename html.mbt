@@ -123,8 +123,16 @@ fn html_risks(b : StringBuilder, items : Array[Json]) -> Unit {
     b.write_string(
       "</div><p class='muted'>Match basis: " +
       escape_html(preview(field(item, "match_basis"))) +
-      "</p></article>",
+      "</p>",
     )
+    if field(item, "evidence") != Json::null() {
+      b.write_string(
+        "<h4>Saved output evidence</h4><pre>" +
+        escape_html(preview(field(item, "evidence"))) +
+        "</pre>",
+      )
+    }
+    b.write_string("</article>")
   }
   b.write_string("</section>")
 }

@@ -80,7 +80,10 @@ Equal $r.base_commit $base 'base commit'; Equal $r.head_commit $head 'head commi
 Equal $r.summary.files 7 'notebook count'
 Equal $r.summary.added 2 'added count'; Equal $r.summary.deleted 2 'deleted count'
 Equal $r.summary.renamed 2 'rename count'; Equal $r.summary.modified 1 'modified count'
-Equal $r.summary.introduced 2 'introduced risks'; Equal $r.summary.existing 2 'existing risks'
+Equal $r.summary.introduced 3 'introduced risks including new info hint';
+$hints=@($r.files | ForEach-Object {$_.report.changes} | Where-Object {$_.status -eq 'introduced' -and $_.after.code -eq 'OUT002'})
+Equal $hints.Count 1 'new cross-version hint counted'
+Equal $hints[0].after.severity 'info' 'hint does not change warning blockers'; Equal $r.summary.existing 2 'existing risks'
 Equal $r.summary.blocked 2 'blocking files'
 Equal @($r.files | Where-Object path -eq 'unchanged.ipynb').Count 0 'unchanged excluded'
 Equal @($r.files | Where-Object change -eq 'renamed' | Where-Object status -eq 'blocked').Count 0 'existing rename does not block'

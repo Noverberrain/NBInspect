@@ -199,5 +199,8 @@ pub fn review_risks(
       })
     }
   }
+  for change in stale_output_changes(before, after, matches, policy) {
+    changes.push(change)
+  }
   { changes, matches, }
 }

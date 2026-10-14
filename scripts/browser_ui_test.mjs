@@ -534,3 +534,38 @@ assert.equal(JSON.parse(elements['budget-effective'].textContent).limits.max_not
 windowListeners.pagehide();
 assert.ok(workers.every(worker => worker.dead));
 console.log('Browser budget UI: import/clear, full blocked/passed downloads, demo isolation, independent policy/filter states, both-input errors, stale reads/callbacks and cleanup passed');
+
+// The browser's actual review entry and downloads include OUT002 and its evidence.
+await trigger('policy-reset');
+elements['risk-status'].value = 'all';
+const staleBook = source => notebook([{ cell_type: 'code', id: 'result', metadata: {}, source, execution_count: 1, outputs: [{ output_type: 'stream', name: 'stdout', text: 'same saved output' }] }]);
+const staleFirst = staleBook('value = 1\nprint(value)\n');
+const staleSecond = staleBook('value = 2\nprint(value)\n');
+elements.before.files = [{ size: staleFirst.length, text: async () => staleFirst }];
+elements.after.files = [{ size: staleSecond.length, text: async () => staleSecond }];
+await trigger('before', 'change');
+await trigger('review');
+assert.match(elements.status.textContent, /未新增阻断级别风险/);
+assert.match(elements.report.srcdoc, /Saved output evidence/);
+let staleDownload = JSON.parse(await blobs.get(elements.json.href).text());
+assert.equal(staleDownload.changes.find(row => row.after?.code === 'OUT002').after.severity, 'info');
+assert.match(await blobs.get(elements.html.href).text(), /before_source_path/);
+elements['risk-status'].value = 'introduced';
+await trigger('risk-status', 'change');
+assert.match(elements.report.srcdoc, /OUT002/);
+const staleFullUrl = elements.json.href;
+elements['risk-status'].value = 'uncertain';
+await trigger('risk-status', 'change');
+assert.ok(!elements.report.srcdoc.includes('Saved output evidence'));
+assert.equal(elements.json.href, staleFullUrl);
+const staleConfig = '{"rules":{"OUT002":{"severity":"error"}}}';
+elements['policy-file'].files = [{ name: 'stale-policy.json', size: staleConfig.length, text: async () => staleConfig }];
+await trigger('policy-file', 'change');
+assert.match(elements['policy-status'].textContent, /9\/9 条规则/);
+await trigger('review');
+assert.match(elements.status.textContent, /新增风险达到阻断级别/);
+await trigger('check');
+assert.ok(!JSON.parse(await blobs.get(elements.json.href).text()).findings.some(row => row.code === 'OUT002'));
+windowListeners.pagehide();
+assert.equal(blobs.size, 0);
+console.log('Browser stale output UI: real inputs, info/error policy, nine-rule display, visible evidence, risk filters and full downloads passed');

@@ -226,7 +226,7 @@ async function importPolicy() {
       policyLoading = false;
       const policy = data.policy;
       const enabled = Object.values(policy.rules).filter(rule => rule.enabled).length;
-      element('policy-status').textContent = '已应用 · ' + policy.fail_on + ' 阻断 · 启用 ' + enabled + '/8 条规则 · 检查与风险审阅使用此策略，差异比较与体积分析不受影响。';
+      element('policy-status').textContent = '已应用 · ' + policy.fail_on + ' 阻断 · 启用 ' + enabled + '/' + Object.keys(policy.rules).length + ' 条规则 · 检查与风险审阅使用此策略，差异比较与体积分析不受影响。';
       element('policy-effective').textContent = JSON.stringify(policy, null, 2);
       element('policy-effective').hidden = false;
       setPolicyButtons();

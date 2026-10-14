@@ -102,6 +102,11 @@ pub fn text_report(report : Json) -> String {
               " [matched by " + report_string(field(item, "match_basis")) + "]",
             )
           }
+          if field(item, "evidence") != Json::null() {
+            b.write_string(
+              "\nSaved output evidence: " + field(item, "evidence").stringify(),
+            )
+          }
           b.write_string("\n")
         }
       _ => ()

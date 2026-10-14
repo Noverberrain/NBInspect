@@ -103,7 +103,8 @@ Equal $r.base_commit $base 'resolved HEAD'; Equal $r.head_commit $null 'no index
 Equal $r.summary.files 5 'staged file count'
 Equal $r.summary.added 1 'staged addition'; Equal $r.summary.modified 1 'staged modification'
 Equal $r.summary.deleted 1 'staged deletion'; Equal $r.summary.renamed 2 'staged renames'
-Equal $r.summary.introduced 2 'new risks'; Equal $r.summary.existing 2 'inherited rename risks'
+Equal $r.summary.introduced 3 'new risks including info hint'; Equal $r.summary.existing 2 'inherited rename risks'
+Equal @($r.files | ForEach-Object {$_.report.changes} | Where-Object {$_.status -eq 'introduced' -and $_.after.code -eq 'OUT002'}).Count 1 'staged changed code hint'
 Equal $r.summary.blocked 2 'only introduced risks block'
 $stagedJson=$r | ConvertTo-Json -Depth 100 -Compress
 # Both directions: risk staged but removed from worktree; unstaged corruption stays out.

@@ -17,7 +17,8 @@ pub fn check(
   max_total_output? : Int = 10485760,
   policy? : CheckPolicy,
   enabled? : Array[String] = [
-    "FMT001", "FMT002", "OUT001", "EXE001", "EXE002", "ATT001", "SIZE001", "META001",
+    "FMT001", "FMT002", "OUT001", "OUT002", "EXE001", "EXE002", "ATT001", "SIZE001",
+    "META001",
   ],
 ) -> Array[Finding] raise InputError {
   if policy is Some(p) {
@@ -40,7 +41,8 @@ pub fn check(
     raise Invalid("output thresholds must be positive")
   }
   let known = [
-    "FMT001", "FMT002", "OUT001", "EXE001", "EXE002", "ATT001", "SIZE001", "META001",
+    "FMT001", "FMT002", "OUT001", "OUT002", "EXE001", "EXE002", "ATT001", "SIZE001",
+    "META001",
   ]
   for rule in enabled {
     if !known.contains(rule) {

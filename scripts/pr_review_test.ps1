@@ -87,7 +87,9 @@ $value=Reports $r 'passed'; Equal $value.policy.fail_on 'error' 'explicit overri
 Save-Notebook 'existing.ipynb' 'existing' $true $true
 $existing=Commit 'fixture existing risk'
 $r=Review $head $existing 0 @('-Config',$policy)
-$value=Reports $r 'passed'; Equal $value.summary.existing 1 'existing risk inherited'; Equal $value.summary.introduced 0 'existing not introduced'
+$value=Reports $r 'passed'; Equal $value.summary.existing 1 'existing risk inherited'; Equal $value.summary.introduced 1 'code change adds info hint while old exception stays existing'
+Equal @($value.files | ForEach-Object {$_.report.changes} | Where-Object {$_.status -eq 'introduced' -and $_.after.code -eq 'OUT001'}).Count 0 'old exception not introduced'
+Equal @($value.files | ForEach-Object {$_.report.changes} | Where-Object {$_.status -eq 'introduced' -and $_.after.code -eq 'OUT002'}).Count 1 'new info hint retained'
 # Incomplete analysis still produces JSON and HTML and fails the check.
 [IO.File]::WriteAllText((Join-Path $repo 'broken.ipynb'),'{')
 Save-Notebook 'valid-new.ipynb' 'valid-new'
