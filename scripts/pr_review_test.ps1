@@ -144,5 +144,94 @@ $uses=[regex]::Matches($template,'uses:\s*([^\s]+)')
 foreach ($use in $uses) {if ($use.Groups[1].Value -notmatch '@[a-f0-9]{40}$') {throw 'Action is not pinned to a full SHA'}}
 if ($template -notmatch 'repository: Noverberrain/NBInspect\s+ref: [a-f0-9]{40}') {throw 'Analyzer is not pinned'}
 $script:passed++
+# Optional growth budgets are independent of publication severity and preserve both reports.
+$budgetPath=Join-Path $fixtures 'growth budget.json'
+$budgetZero='{"limits":{"max_notebook_growth_bytes":0,"max_output_growth_bytes":0,"max_attachment_growth_bytes":0}}'
+[IO.File]::WriteAllText($budgetPath,$budgetZero)
+function BudgetReports($run,[string]$state) {
+  $value=Get-Content (Join-Path $run.directory 'budget.json') -Raw -Encoding utf8 | ConvertFrom-Json -Depth 100
+  Equal $value.status $state 'budget state'
+  Equal $value.kind 'git-budget' 'budget kind'
+  Equal $value.scope 'per-changed-notebook' 'independent budget scope'
+  if (!$run.summary.Contains("Budget status: **$state**")) {throw 'budget summary missing'}
+  if (!([IO.File]::ReadAllText((Join-Path $run.directory 'budget.html'))).StartsWith('<!doctype html>')) {throw 'budget HTML missing'}
+  $risk=Get-Content (Join-Path $run.directory 'review.json') -Raw -Encoding utf8 | ConvertFrom-Json -Depth 100
+  Equal $value.base_commit $risk.base_commit 'same base for both checks'
+  Equal $value.head_commit $risk.head_commit 'same head for both checks'
+  return $value
+}
+$r=Review $base $base 0 @('-BudgetConfig',$budgetPath)
+[void](Reports $r 'passed'); [void](BudgetReports $r 'passed')
+if (!$r.summary.Contains('Overall outcome: **passed**')) {throw 'overall pass absent'}
+$budgetOnly=Review $base $head 1 @('-BudgetConfig',$budgetPath)
+[void](Reports $budgetOnly 'passed'); [void](BudgetReports $budgetOnly 'blocked')
+Equal ([IO.File]::ReadAllText((Join-Path $budgetOnly.directory 'budget-config.json'))) $budgetZero 'budget frozen snapshot'
+if (!$budgetOnly.summary.Contains('Overall outcome: **blocked**')) {throw 'budget block masked by risk pass'}
+$r=Review $base $head 1 @('-Config',$policy,'-BudgetConfig',$budgetPath)
+[void](Reports $r 'blocked'); [void](BudgetReports $r 'blocked')
+$r=Review $base $head 1 @('-Config',$policy,'-FailOn','error','-BudgetConfig',$budgetPath)
+[void](Reports $r 'passed'); [void](BudgetReports $r 'blocked')
+[IO.File]::WriteAllText($budgetPath,'{"limits":{"max_notebook_growth_bytes":2147483647}}')
+$r=Review $base $head 1 @('-Config',$policy,'-BudgetConfig',$budgetPath)
+[void](Reports $r 'blocked'); [void](BudgetReports $r 'passed')
+[IO.File]::WriteAllText($budgetPath,$budgetZero)
+$r=Review $head $base 0 @('-Config',$policy,'-BudgetConfig',$budgetPath)
+[void](Reports $r 'passed'); [void](BudgetReports $r 'passed')
+$r=Review $existing $broken 2 @('-Config',$policy,'-BudgetConfig',$budgetPath)
+[void](Reports $r 'incomplete'); [void](BudgetReports $r 'incomplete')
+if (!$r.summary.Contains('Overall outcome: **analysis failed**')) {throw 'incomplete analysis masked'}
+[IO.File]::WriteAllText($budgetPath,'{"limits":{}}')
+$r=Review $base $head 2 @('-BudgetConfig',$budgetPath)
+if (!(Test-Path (Join-Path $r.directory 'review.html')) -or !(Test-Path (Join-Path $r.directory 'budget-json.stderr.log')) -or !$r.summary.Contains('Analysis failed')) {throw 'budget error lost risk artifacts/diagnostics'}
+$r=Review $base $head 2 @('-BudgetConfig',(Join-Path $fixtures 'absent-budget.json'))
+[void](Review $base $head 2 @('-BudgetConfig',$fixtures))
+[IO.File]::WriteAllText($budgetPath,(' ' * 1048577))
+[void](Review $base $head 2 @('-BudgetConfig',$budgetPath))
+[IO.File]::WriteAllText($budgetPath,$budgetZero)
+# A PR-modified budget is not used when the caller passes a trusted baseline config.
+$untrusted=Join-Path $repo 'growth-budget.json'
+[IO.File]::WriteAllText($untrusted,'{"limits":{"max_notebook_growth_bytes":2147483647}}')
+$prBudgetHead=Commit 'PR budget file must not override trusted input'
+$r=Review $forkHead $prBudgetHead 1 @('-BudgetConfig',$budgetPath)
+[void](BudgetReports $r 'blocked')
+Equal ([IO.File]::ReadAllText((Join-Path $r.directory 'budget-config.json'))) $budgetZero 'PR budget ignored'
+if ($r.summary.Contains('payload')) {throw 'budget summary includes notebook content'}
+# Failure writing the job summary must not leave a successful artifact summary.
+$directory=Join-Path $fixtures 'budget bad-summary reports'
+$r=Run-Process $pwsh @('-NoProfile','-File',$driver,'-Executable',$exe,'-Repository',$repo,'-BaseCommit',$base,'-HeadCommit',$base,'-BudgetConfig',$budgetPath,'-ReportDirectory',$directory,'-StepSummary',$fixtures) $root
+Equal $r.code 2 'budget summary failure'
+if (!([IO.File]::ReadAllText((Join-Path $directory 'summary.md'))).Contains('Overall outcome: **analysis failed**')) {throw 'artifact summary falsely passed'}
+$script:passed++
+# The upgraded template uses the already-published budget-capable analyzer and trusted config.
+if (!$template.Contains('ref: de888ce32126597c05633da7058009d17afbdef5') -or !$template.Contains("-BudgetConfig './trusted/.github/nbinspect/growth-budget.json'")) {throw 'budget template pin/trusted path missing'}
+$script:passed++
+# Exercise the real report validator with corrupted data without running an untrusted analyzer.
+$astTokens=$null; $astErrors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($driver,[ref]$astTokens,[ref]$astErrors)
+foreach ($name in @('Read-ReportFile','Read-ValidatedReport')) {
+  $functionAst=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
+  if (!$functionAst) {throw "Missing report validator: $name"}
+  . ([ScriptBlock]::Create($functionAst.Extent.Text))
+}
+$ownedDirectory=[IO.Directory]::CreateDirectory((Join-Path $fixtures 'validator reports')).FullName
+$utf8=[Text.UTF8Encoding]::new($false,$true)
+$BaseCommit=$base; $HeadCommit=$head
+$budgetKeys=@('files','added','modified','renamed','deleted','passed','blocked','errors')
+$validBudget=Get-Content (Join-Path $budgetOnly.directory 'budget.json') -Raw -Encoding utf8
+foreach ($fault in @('identity','scope','counts','exit')) {
+  $fake=$validBudget | ConvertFrom-Json -AsHashtable -Depth 100
+  $nativeExit=1
+  switch ($fault) {
+    'identity' {$fake['head_commit']='f'*40}
+    'scope' {$fake['scope']='repository-total'}
+    'counts' {$fake['summary']['files']=99}
+    'exit' {$nativeExit=0}
+  }
+  [IO.File]::WriteAllText((Join-Path $ownedDirectory 'budget.json'),($fake | ConvertTo-Json -Depth 100),$utf8)
+  $rejected=$false
+  try { [void](Read-ValidatedReport 'budget.json' 'git-budget' $nativeExit $budgetKeys) } catch {$rejected=$true}
+  if (!$rejected) {throw "Corrupt budget report accepted: $fault"}
+  $script:passed++
+}
 Write-Output "PR review integration: $script:passed passed (native reports, exits, job summary, failure artifacts, fork endpoints, workflow contract)"
 Write-Output "Fixtures retained in: $fixtures"

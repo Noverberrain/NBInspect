@@ -139,19 +139,21 @@ pwsh -NoProfile -File .\scripts\git_hook.ps1 -Action Uninstall -Repository 'E:\m
 
 仓库自带的 `.github/workflows/ci.yml` 验证 NBInspect 源码；另提供 [Notebook PR 工作流模板](templates/github-actions/notebook-review.yml)，供使用者的 Notebook 仓库检查提交内容。模板使用 `pull_request` 事件的 base／head 两个实际提交，不使用 GitHub 的模拟合并提交或自动寻找 merge-base。
 
-接入时，在目标 Notebook 仓库创建下面三个文件并先提交到 PR 的目标分支：
+接入时，在目标 Notebook 仓库创建下面四个文件并先提交到 PR 的目标分支：
 
 | 本项目文件 | 复制到目标仓库 |
 | --- | --- |
 | `templates/github-actions/notebook-review.yml` | `.github/workflows/notebook-review.yml` |
 | `scripts/pr_review.ps1` | `.github/nbinspect/pr_review.ps1` |
 | `configs/sharing.json`（或自己的规则配置） | `.github/nbinspect/policy.json` |
+| `configs/growth-budget.json`（或自己的独立增长预算） | `.github/nbinspect/growth-budget.json` |
 
-模板在 `windows-2022` 上分别检出目标分支的可信脚本／策略、Notebook 提交历史和固定版本的 NBInspect；校验 PR head 与事件一致，再构建 native 分析器。当前分析器固定到已推送的 `92b96d3f5b7a1556394ff5ba336c7c0f8892d7d9`，具备本模板需要的 `review-git` 功能；升级时替换为已审核的完整提交号。MoonBit／core 使用与项目 CI 相同的固定版本及 SHA-256，Actions 也固定到完整 SHA。
+模板在 `windows-2022` 上分别检出目标分支的可信脚本／策略／预算、Notebook 提交历史和固定版本的 NBInspect；校验 PR head 与事件一致，再构建 native 分析器。当前分析器固定到已推送的 `de888ce32126597c05633da7058009d17afbdef5`，具备 `review-git` 与 `budget-git` 功能；升级时替换为已审核的完整提交号。MoonBit／core 使用与项目 CI 相同的固定版本及 SHA-256，Actions 也固定到完整 SHA。
 
-- 运行 `review-git`，分别生成 `review.json` 和可离线打开的 `review.html`；一次读取规则并保存 `policy.json` 快照，两种格式使用同一份策略。不执行 Notebook、PR 中的脚本或 PR 版本的规则。
-- native 退出码 `0`：检查通过；`1`：有新增阻断风险；`2`：分析／输入失败。运行器校验报告提交号、格式和状态，JSON／HTML 退出码不同或报告损坏均按 `2` 失败，不用 `continue-on-error` 掩盖失败。
-- Job Summary 展示状态、两个提交号、文件及风险数量；Notebook 内容只保存在报告与日志产物中，摘要不包含任意 Notebook 文本。基础设施或 CLI 无法生成报告时，明确标记分析失败，保留已经产生的日志。
+- 运行 `review-git`，分别生成 `review.json` 和可离线打开的 `review.html`；一次读取规则并保存 `policy.json` 快照，两种格式使用同一份策略。不执行 Notebook、PR 中的脚本或 PR 版本的规则／预算。
+- 同时运行 `budget-git`，保存 `budget.json`／`budget.html` 和 `budget-config.json` 快照；每个变更 Notebook 独立使用同一份增长额度，新增文件从零计量，删除不抵消其他文件的超额。
+- 联合退出码 `0`：两类检查均通过；`1`：新增风险阻断或体积预算超额；`2`：任一分析／输入／报告失败，优先于阻断。风险已阻断时仍运行预算；有效的不完整报告也会保留两类结果。运行器校验报告提交号、格式和状态，任一类 JSON／HTML 退出码不同、提交号／预算作用范围不符或报告损坏均按 `2` 失败，不用 `continue-on-error` 掩盖失败。
+- Job Summary 展示联合结果、风险／预算各自状态、两个提交号、文件及风险／预算数量；Notebook 内容只保存在报告与日志产物中，摘要不包含任意 Notebook 文本。基础设施或 CLI 无法生成报告时，明确标记分析失败，保留已经产生的日志。
 - 无论审阅通过还是失败，上传步骤都尝试保存 `reports/` 与工具链安装日志，保留 14 天。运行器还保存 `summary.md`、native stdout／stderr；CLI／运行器失败时保留 `run-error.txt`。JSON 或 HTML 单文件超过 64 MiB 会让检查失败。
 - 使用 `contents: read`，不申请 PR 评论权限，不保存 checkout 凭据。通过基仓库的 `refs/pull/<number>/head` 读取 fork PR，head 在检出期间变化会失败并提示重新运行。缺失 Git 对象也会失败，不回退到其他提交。
 
@@ -162,8 +164,11 @@ $base = git -C 'E:\my-notebooks' rev-parse HEAD~1
 $head = git -C 'E:\my-notebooks' rev-parse HEAD
 pwsh -NoProfile -File .\scripts\pr_review.ps1 `
   -Executable $bin -Repository 'E:\my-notebooks' -BaseCommit $base -HeadCommit $head `
-  -Config .\configs\sharing.json -ReportDirectory .\reports\pr-review
+  -Config .\configs\sharing.json `
+  -BudgetConfig .\configs\growth-budget.json -ReportDirectory .\reports\pr-review
 ```
+
+运行器的 `-BudgetConfig FILE` 为可选参数，缺省保留原有仅风险审阅行为并明确标记未请求预算；模板默认启用预算，目标分支缺少文件时失败，不静默跳过。已有接入者升级时须同时更新目标分支的运行器、模板固定分析器和预算文件；仅修改 PR 分支不会改变可信配置。两类配置均最多 1 MiB，并冻结为报告目录中的独立快照，分析／配置失败保留已有报告及日志，摘要不得将未完成检查标记为全部通过。
 
 `ReportDirectory` 必须尚不存在，不覆盖旧产物；配置与可执行文件的相对路径以调用目录为准。可用 `-FailOn` 覆盖阻断级别，用 `-StepSummary FILE` 指定摘要文件；GitHub 上默认追加到 `GITHUB_STEP_SUMMARY`。每个格式最多运行 10 分钟，工作流任务上限 30 分钟；核心 Git 清单、文件数量及 Blob 限制不变。
 
@@ -260,7 +265,7 @@ pwsh -NoProfile -File .\scripts\pr_review.ps1 `
 - JSON `kind: "git-budget"`、`schema_version: 1`、`scope: "per-changed-notebook"`，记录有效 `budget`、`source`、前后提交或 Blob ID、逐文件状态和嵌套完整预算证据。首次提交 `base_commit` 为 `null`，暂存来源 `head_commit` 为 `null`；新增比较标记 `comparison.before_absent: true`，不虚构历史单元格身份。文本和离线 HTML 同样展示来源、超额、错误和证据。
 - 沿用 Git 清单 16 MiB、最多 1,000 个变更 Notebook、每个 Blob 50 MiB、Git 子进程 30 秒超时、格式／单元格／资源／匹配限制。链接、子模块不跟随，不执行外部 diff、textconv 或 Notebook，不自动拉取缺失对象；LFS 指针仍按保存内容解析，不读取 LFS 实体。改名依赖 Git 识别，未识别时按删除＋新增计量。
 
-这项功能是 native CLI 入口；新增文件计量和预算汇总核心也在 JS 后端验证。本轮不修改现有提交前 hook 或 Notebook PR 模板，接入这些流程需后续显式配置。
+这项功能是 native CLI 入口；新增文件计量和预算汇总核心也在 JS 后端验证。现有 Notebook PR 模板可通过可信预算配置调用此命令；提交前 hook 的预算串联尚未提供。
 
 ## 发布规则配置
 

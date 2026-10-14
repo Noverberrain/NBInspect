@@ -26,7 +26,7 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
-      - name: Checkout trusted baseline scripts and policy
+      - name: Checkout trusted baseline scripts, policy and budget
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: Noverberrain/NBInspect
-          ref: 92b96d3f5b7a1556394ff5ba336c7c0f8892d7d9
+          ref: de888ce32126597c05633da7058009d17afbdef5
           path: analyzer
           persist-credentials: false
 
@@ -102,7 +102,8 @@ jobs:
           & ./trusted/.github/nbinspect/pr_review.ps1 `
             -Executable './analyzer/_build/native/debug/build/cmd/nbinspect/nbinspect.exe' `
             -Repository './notebooks' -BaseCommit $env:BASE_SHA -HeadCommit $env:HEAD_SHA `
-            -Config './trusted/.github/nbinspect/policy.json' -ReportDirectory './reports'
+            -Config './trusted/.github/nbinspect/policy.json' `
+            -BudgetConfig './trusted/.github/nbinspect/growth-budget.json' -ReportDirectory './reports'
           exit $LASTEXITCODE
 
       - name: Upload Notebook reports and logs
