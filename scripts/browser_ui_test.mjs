@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import * as core from '../web/nbinspect.js';
 
-const ids = ['notes-panel', 'note-item', 'note-decision', 'note-reason', 'note-save', 'note-remove', 'notes-status', 'note-context', 'notes-json', 'notes-html', 'before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff',
+const ids = ['notes-file', 'notes-panel', 'note-item', 'note-decision', 'note-reason', 'note-save', 'note-remove', 'notes-status', 'note-context', 'notes-json', 'notes-html', 'before', 'after', 'view', 'check', 'compare', 'review', 'sample', 'sample-review', 'profile', 'sample-profile', 'profile-diff', 'sample-profile-diff',
   'risk-status', 'risk-controls', 'status', 'report', 'empty', 'json', 'html',
   'policy-file', 'policy-reset', 'policy-status', 'policy-effective', 'policy-name',
   'budget', 'sample-budget', 'budget-file', 'budget-reset', 'budget-status', 'budget-effective', 'budget-name'];
@@ -40,7 +40,7 @@ const windowListeners = {};
 const context = {
   document: { createElement: () => ({}), getElementById: id => elements[id] },
   window: { addEventListener(event, callback) { windowListeners[event] = callback; } },
-  Worker, Blob,
+  Worker, Blob, TextEncoder,
   URL: {
     createObjectURL(blob) { const url = 'blob:test/' + ++nextBlob; blobs.set(url, blob); return url; },
     revokeObjectURL(url) { blobs.delete(url); },
@@ -673,3 +673,149 @@ assert.match(elements['notes-status'].textContent, /没有风险项/);
 assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
 windowListeners.pagehide();
 console.log('Browser review annotations: validation, snapshot, escaping, save/update/remove, filter stability, input/policy/operation/page cleanup and empty reports passed');
+// Restore only to the same complete report, without changing analysis decisions.
+await trigger('sample-review');
+elements['note-decision'].value = 'accepted';
+elements['note-reason'].value = unsafe;
+await trigger('note-save');
+elements['note-item'].value = '1';
+await trigger('note-item', 'change');
+elements['note-decision'].value = 'confirmed';
+elements['note-reason'].value = '第二项已核对';
+await trigger('note-save');
+const savedNotes = JSON.parse(await blobs.get(elements['notes-json'].href).text());
+async function importText(text, overrides = {}) {
+  elements['notes-file'].files = [{ name: 'review-notes.json', size: new TextEncoder().encode(text).length, text: async () => text, ...overrides }];
+  await trigger('notes-file', 'change');
+}
+async function restoredRecord() { return JSON.parse(await blobs.get(elements['notes-json'].href).text()); }
+function clone(value) { return JSON.parse(JSON.stringify(value)); }
+await trigger('sample-review');
+assert.equal(elements['notes-file'].disabled, false);
+assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+const untouchedReportUrl = elements.json.href;
+const untouchedHtmlUrl = elements.html.href;
+await importText(JSON.stringify(savedNotes));
+assert.match(elements['notes-status'].textContent, /已导入 2 项/);
+assert.equal(elements['notes-file'].value, '');
+assert.equal(elements['note-decision'].value, 'accepted');
+assert.equal(elements['note-reason'].value, unsafe);
+assert.deepEqual((await restoredRecord()).notes, savedNotes.notes);
+assert.equal(elements.json.href, untouchedReportUrl);
+assert.equal(elements.html.href, untouchedHtmlUrl);
+assert.deepEqual((await restoredRecord()).report, savedNotes.report);
+assert.ok((await blobs.get(elements['notes-html'].href).text()).includes('&lt;script&gt;'));
+assert.ok(!(await blobs.get(elements['notes-html'].href).text()).includes('<script>alert'));
+elements['risk-status'].value = 'introduced';
+await trigger('risk-status', 'change');
+assert.deepEqual((await restoredRecord()).notes, savedNotes.notes);
+const invalidRecords = [null, [], 'record', savedNotes.report];
+for (const mutate of [
+  r => { r.schema_version = 2; },
+  r => { r.kind = 'review'; },
+  r => { r.exported_at = 'invalid'; },
+  r => { delete r.exported_at; },
+  r => { r.extra = true; },
+  r => { r.report = null; },
+  r => { r.report.changes[0].status = 'changed'; },
+  r => { r.report.changes.reverse(); },
+  r => { r.report.policy.fail_on = 'info'; },
+  r => { r.notes = {}; },
+  r => { r.notes = Array(savedNotes.report.changes.length + 1).fill(r.notes[0]); },
+  r => { r.notes[1].change_index = r.notes[0].change_index; },
+  r => { r.notes[1].change_index = -1; },
+  r => { r.notes[1].change_index = 0.5; },
+  r => { r.notes[1].change_index = '1'; },
+  r => { r.notes[1].change_index = r.report.changes.length; },
+  r => { r.notes[1].decision = 'constructor'; },
+  r => { r.notes[1].decision = ['confirmed']; },
+  r => { r.notes[1].reason = null; },
+  r => { r.notes[1].reason = 'x'.repeat(2001); },
+  r => { r.notes[1].decision = 'accepted'; r.notes[1].reason = ' \n '; },
+  r => { delete r.notes[1].reason; },
+  r => { r.notes[1].extra = true; },
+]) { const r = clone(savedNotes); mutate(r); invalidRecords.push(r); }
+for (const invalid of invalidRecords) {
+  const url = elements['notes-json'].href;
+  await importText(JSON.stringify(invalid));
+  assert.match(elements['notes-status'].textContent, /导入失败，现有标注保持不变/);
+  assert.equal(elements['notes-json'].href, url);
+  assert.deepEqual((await restoredRecord()).notes, savedNotes.notes);
+}
+await importText('{broken');
+assert.match(elements['notes-status'].textContent, /JSON 格式无效/);
+await importText('', { size: 20 * 1024 * 1024 + 1, text: () => { throw Error('must not read'); } });
+assert.match(elements['notes-status'].textContent, /20 MiB/);
+await importText('中'.repeat(7 * 1024 * 1024), { size: 1 });
+assert.match(elements['notes-status'].textContent, /20 MiB/);
+await importText('', { text: async () => { throw Error('read denied'); } });
+assert.match(elements['notes-status'].textContent, /read denied/);
+assert.deepEqual((await restoredRecord()).notes, savedNotes.notes);
+// Pretty-printing, BOM and object field order do not invalidate an otherwise identical snapshot.
+function reverseKeys(value) {
+  if (Array.isArray(value)) return value.map(reverseKeys);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reverseKeys(item)]));
+  return value;
+}
+await importText('\uFEFF' + JSON.stringify(reverseKeys(savedNotes), null, 2));
+assert.match(elements['notes-status'].textContent, /已导入 2 项/);
+const noNotes = { ...savedNotes, notes: [] };
+await importText(JSON.stringify(noNotes));
+assert.match(elements['notes-status'].textContent, /已导入 0 项/);
+assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+assert.equal(elements['note-reason'].value, '');
+await importText(JSON.stringify(savedNotes));
+elements['note-decision'].value = 'needs-action';
+elements['note-reason'].value = '导入后继续编辑';
+await trigger('note-save');
+assert.equal((await restoredRecord()).notes[0].reason, '导入后继续编辑');
+// A newer import, explicit manual edits and lifecycle changes all fence pending reads.
+async function pendingImport() {
+  let resolve, reject;
+  const deferred = new Promise((yes, no) => { resolve = yes; reject = no; });
+  await importText('', { text: () => deferred });
+  return { resolve, reject };
+}
+let pending = await pendingImport();
+await importText(JSON.stringify(savedNotes));
+const newUrl = elements['notes-json'].href;
+pending.resolve(JSON.stringify(noNotes));
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(elements['notes-json'].href, newUrl);
+pending = await pendingImport();
+elements['note-reason'].value = '读取期间手动修改';
+await trigger('note-save');
+pending.resolve(JSON.stringify(savedNotes));
+await new Promise(resolve => setImmediate(resolve));
+assert.equal((await restoredRecord()).notes[0].reason, '读取期间手动修改');
+pending = await pendingImport();
+await trigger('note-remove');
+pending.resolve(JSON.stringify(savedNotes));
+await new Promise(resolve => setImmediate(resolve));
+assert.deepEqual((await restoredRecord()).notes.map(note => note.change_index), [1]);
+pending = await pendingImport();
+elements['notes-file'].files = [];
+await trigger('notes-file', 'change');
+pending.resolve(JSON.stringify(noNotes));
+await new Promise(resolve => setImmediate(resolve));
+assert.deepEqual((await restoredRecord()).notes.map(note => note.change_index), [1]);
+for (const action of [() => trigger('before', 'change'), () => trigger('policy-reset'), () => trigger('budget-reset'), () => trigger('sample'), async () => windowListeners.pagehide()]) {
+  await trigger('sample-review');
+  pending = await pendingImport();
+  await action();
+  const status = elements['notes-status'].textContent;
+  pending.reject(Error('late read error'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(elements['notes-status'].textContent, status);
+  assert.equal(elements['notes-file'].disabled, true);
+  assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+}
+await trigger('sample-review');
+pending = await pendingImport();
+await trigger('sample-review');
+pending.resolve(JSON.stringify(savedNotes));
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(elements['notes-json'].attributes['aria-disabled'], 'true');
+windowListeners.pagehide();
+assert.equal(blobs.size, 0);
+console.log('Browser annotation import: round trip, immutable full snapshot, key order/BOM, strict atomic validation, limits/read errors, empty replace, editing, newest-read/manual/lifecycle fences passed');

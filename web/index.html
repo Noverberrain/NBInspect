@@ -72,6 +72,8 @@
       </div>
       <details id="notes-panel" class="policy-panel" hidden>
         <summary>人工审阅标注 <span>独立于分析判定</span></summary>
+        <label class="annotation-import" for="notes-file">导入已导出的标注 JSON（最多 20 MiB）<input id="notes-file" type="file" accept=".json,application/json" disabled></label>
+        <p>先用相同文件与规则生成审阅报告，再导入标注。全部校验通过后替换当前已保存标注；请先导出需要保留的记录。</p>
         <div class="annotation-fields">
           <label for="note-item">全部风险项（不随筛选变化）<select id="note-item" disabled></select></label>
           <label for="note-decision">人工决定<select id="note-decision" disabled><option value="needs-action">需处理</option><option value="confirmed">已确认</option><option value="accepted">允许保留</option></select></label>
