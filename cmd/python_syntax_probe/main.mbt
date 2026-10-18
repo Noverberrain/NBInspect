@@ -9,8 +9,12 @@ extern "C" fn exit_process(code : Int) -> Unit = "nb_exit"
 fn main {
   let args = @env.args()
   let result : Json = try {
-    if args.length() != 2 || args[1].contains("\u0000") {
-      raise @syntax.Invalid("expected one transport JSON file")
+    if (args.length() != 2 && args.length() != 3) ||
+      args[1].contains("\u0000") ||
+      (args.length() == 3 && args[2] != "--bindings") {
+      raise @syntax.Invalid(
+        "expected a transport JSON file and optional --bindings",
+      )
     }
     let raw = read_bytes(args[1], @utf8.encode(args[1]), 16777216)
     if raw.length() == 0 {
@@ -21,7 +25,11 @@ fn main {
     let text = @utf8.decode(raw) catch {
       _ => raise @syntax.Invalid("transport is not UTF-8")
     }
-    @syntax.read_transport(text).to_json()
+    if args.length() == 3 {
+      @bindings.analyze(text).to_json()
+    } else {
+      @syntax.read_transport(text).to_json()
+    }
   } catch {
     @syntax.Invalid(message) => { "error": message }
   }
@@ -29,7 +37,8 @@ fn main {
   exit_process(
     if result is { "error": _, .. } {
       2
-    } else if result is { "status": "parse-errors", .. } {
+    } else if result is { "status": "parse-errors", .. } ||
+      result is { "status": "incomplete", .. } {
       1
     } else {
       0

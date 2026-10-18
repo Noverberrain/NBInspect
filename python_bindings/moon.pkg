@@ -1,0 +1,4 @@
+import {
+  "Noverberrain/nbinspect/python_syntax" @syntax,
+  "moonbitlang/core/encoding/utf8",
+}

@@ -4,8 +4,14 @@ supported_targets = "js"
 
 import {
   "Noverberrain/nbinspect/python_syntax" @syntax,
+  "Noverberrain/nbinspect/python_bindings" @bindings,
 }
 
 options(
-  link: { "js": { "format": "esm", "exports": [ "nbinspect_python_syntax" ] } },
+  link: {
+    "js": {
+      "format": "esm",
+      "exports": [ "nbinspect_python_syntax", "nbinspect_python_bindings" ],
+    },
+  },
 )

@@ -1,6 +1,6 @@
 # Python syntax frontend experiment
 
-This is the first analysis-depth milestone: a reproducible syntax frontend, not variable binding, dataflow, dependency inference or proof of correct execution. It is independent of the stable `nbinspect` CLI, Notebook review rules and browser UI.
+The default syntax mode is the first analysis-depth milestone: a reproducible syntax frontend, not dataflow, dependency inference or proof of correct execution. The separate `--mode bindings` experiment adds limited module-name modeling; see [its scope and assumptions](../../python_bindings/README.md). It is independent of the stable `nbinspect` CLI, Notebook review rules and browser UI.
 
 ## Prepare and run
 
@@ -21,7 +21,7 @@ The input is one UTF-8 Python source file, including an empty file. Output is JS
 - MoonBit's independent `python_syntax` package validates this transport and exposes typed document, node, position and diagnostic models on native and JS. The native probe currently consumes a transport created by **Node/WASM**; it is **not** a direct native C parser binding. Node remains required for both command modes. The transport validator cannot authenticate an externally fabricated tree or independently prove Python grammar validity.
 - Every node retains kind, named/missing flags, optional incoming grammar field, parent and half-open source range. JSON omits absent optional fields. Coordinates are **zero-based UTF-8 byte offsets and LF-based line/byte columns**, not UTF-16 positions or screen columns. CRLF, non-ASCII and non-BMP characters are preserved. The report includes the complete source once; it is local and no source is uploaded.
 - At most **1 MiB** source, **50,000** CST nodes, **256** nesting edges and **16 MiB** transport. A parser progress callback requests cancellation after roughly one second; it is cooperative, not a process isolation guarantee. Native validation subprocesses have a ten-second timeout. Exceeding a limit fails rather than returning a truncated success. Parser/tree/cursor handles are released on failures.
-- No source code, imports, functions, shell commands or Notebook cells are executed. No modifications are made to input files. Direct Notebook import, symbol binding, dependency graphs and cross-version impact analysis remain later milestones.
+- No source code, imports, functions, shell commands or Notebook cells are executed. No modifications are made to input files. Direct Notebook import, dependency graphs and cross-version impact analysis remain later milestones. Limited symbol binding is available only through the separate `--mode bindings` experiment.
 
 ## Validation
 

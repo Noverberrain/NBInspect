@@ -408,3 +408,9 @@ Copyright 2026 Noverberrain.
 新增独立实验入口，用锁定版本的 Tree-sitter Python WASM 语法前端生成具体语法树（CST），由 MoonBit 校验并输出节点、语法字段、UTF-8 源码位置和错误恢复诊断。详见 [准备、运行、架构与限制](tools/python-syntax/README.md)及[第三方许可说明](tools/python-syntax/THIRD_PARTY.md)。
 
 这一阶段只验证语法前端与两种 MoonBit 后端的接入。Node／浏览器运行同一份 WASM；native 模式目前由 Node 生成语法传输记录，再交给 native MoonBit 校验，并非原生 C 解析器直连。暂不接入现有 Notebook 检查、CLI 主命令和浏览器界面，也不提供变量绑定、依赖推断或跨单元格影响分析；`parsed` 不代表程序语义或运行结果正确。输入代码始终不执行。
+
+### 定义与引用建模实验
+
+在语法前端上新增 MoonBit 模型，记录模块级名称定义、读取、重新赋值版本及其前序绑定关系，区分先读后写、链式与增强赋值。调用、不支持的作用域／控制流及其他动态情况会记录不确定性，清空旧绑定环境，后续明确赋值可重新建立绑定。详情见 [支持范围、假设与运行命令](python_bindings/README.md)。
+
+入口使用 `--mode bindings`；它仍是独立实验，不接入原有发布判定。当前只处理有限的模块级语义和 ASCII 标识符，不执行 Python，不提供单元格依赖图或跨版本影响分析，不能据此判断运行结果正确。

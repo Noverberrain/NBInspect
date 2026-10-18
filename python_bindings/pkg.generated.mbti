@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Noverberrain/nbinspect/python_bindings"
+
+import {
+  "Noverberrain/nbinspect/python_syntax",
+}
+
+// Values
+pub fn analyze(String) -> BindingReport raise @python_syntax.SyntaxError
+
+// Errors
+
+// Types and methods
+pub(all) struct BindingReport {
+  schema_version : Int
+  kind : String
+  status : String
+  assumption : String
+  parser : String
+  source : String
+  definitions : Array[Definition]
+  references : Array[Reference]
+  uncertainties : Array[Uncertainty]
+  syntax_diagnostics : Array[@python_syntax.Diagnostic]
+} derive(ToJson)
+pub fn BindingReport::to_json(Self) -> Json
+
+pub(all) struct Definition {
+  id : Int
+  order : Int
+  name : String
+  version : Int
+  node : Int
+  statement : Int
+  kind : String
+  scalar : Bool
+  start : @python_syntax.Position
+  end : @python_syntax.Position
+} derive(ToJson)
+pub fn Definition::to_json(Self) -> Json
+
+pub(all) struct Reference {
+  order : Int
+  name : String
+  node : Int
+  context : String
+  resolution : String
+  definition : Int?
+  start : @python_syntax.Position
+  end : @python_syntax.Position
+} derive(ToJson)
+pub fn Reference::to_json(Self) -> Json
+
+pub(all) struct Uncertainty {
+  order : Int
+  node : Int
+  reason : String
+  start : @python_syntax.Position
+  end : @python_syntax.Position
+} derive(ToJson)
+pub fn Uncertainty::to_json(Self) -> Json
+
+// Type aliases
+
+// Traits
