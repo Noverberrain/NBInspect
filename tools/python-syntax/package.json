@@ -1,0 +1,10 @@
+{
+  "name": "nbinspect-python-syntax-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {},
+  "dependencies": {
+    "web-tree-sitter": "0.25.10",
+    "tree-sitter-python": "0.25.0"
+  }
+}

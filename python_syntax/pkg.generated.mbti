@@ -1,0 +1,54 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Noverberrain/nbinspect/python_syntax"
+
+// Values
+pub fn read_transport(String) -> Document raise SyntaxError
+
+// Errors
+pub(all) suberror SyntaxError {
+  Invalid(String)
+}
+
+// Types and methods
+pub(all) struct Diagnostic {
+  node : Int
+  kind : String
+  start : Position
+  end : Position
+} derive(ToJson)
+pub fn Diagnostic::to_json(Self) -> Json
+
+pub(all) struct Document {
+  schema_version : Int
+  kind : String
+  status : String
+  parser : String
+  coordinates : String
+  source : String
+  nodes : Array[SyntaxNode]
+  diagnostics : Array[Diagnostic]
+} derive(ToJson)
+pub fn Document::to_json(Self) -> Json
+
+pub(all) struct Position {
+  byte_offset : Int
+  line : Int
+  column : Int
+} derive(ToJson)
+pub fn Position::to_json(Self) -> Json
+
+pub(all) struct SyntaxNode {
+  index : Int
+  parent : Int?
+  kind : String
+  field_name : String?
+  named : Bool
+  missing : Bool
+  start : Position
+  end : Position
+} derive(ToJson)
+pub fn SyntaxNode::to_json(Self) -> Json
+
+// Type aliases
+
+// Traits

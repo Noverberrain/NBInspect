@@ -41,6 +41,8 @@ try {
   Invoke-Stage 'web-build' $pwsh @('-NoProfile', '-File', 'scripts/build_web.ps1')
   Invoke-Stage 'browser-core' 'node' @('scripts/browser_core_test.mjs')
   Invoke-Stage 'browser-ui' 'node' @('scripts/browser_ui_test.mjs')
+  Invoke-Stage 'python-syntax-install' 'npm.cmd' @('ci', '--prefix', 'tools/python-syntax', '--ignore-scripts', '--no-audit', '--no-fund')
+  Invoke-Stage 'python-syntax' 'node' @('scripts/python_syntax_test.mjs')
   'All validation stages passed.' | Tee-Object -FilePath $summary -Append | Write-Host
 } catch {
   if ($summary) { $_.ToString() | Tee-Object -FilePath $summary -Append | Write-Host }

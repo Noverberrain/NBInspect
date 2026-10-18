@@ -1,0 +1,13 @@
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+import {
+  "Noverberrain/nbinspect/python_syntax" @syntax,
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
+}
+
+options(
+  "native-stub": [ "io.c" ],
+)

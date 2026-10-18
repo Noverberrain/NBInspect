@@ -1,0 +1,11 @@
+pkgtype(kind: "foreign_library")
+
+supported_targets = "js"
+
+import {
+  "Noverberrain/nbinspect/python_syntax" @syntax,
+}
+
+options(
+  link: { "js": { "format": "esm", "exports": [ "nbinspect_python_syntax" ] } },
+)

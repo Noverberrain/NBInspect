@@ -2,3 +2,5 @@ _build/
 .mooncakes/
 web/nbinspect.js
 reports/
+
+tools/python-syntax/node_modules/
